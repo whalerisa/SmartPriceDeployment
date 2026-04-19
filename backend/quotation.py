@@ -56,14 +56,14 @@ def _calculate_expire_date(create_date: str = None) -> str:
 
 def _generate_quote_no(branch_code: str, ibt_branch: str = None) -> str:
     """
-    Format:  BSSP-2502/0001 (normal)
-             BSSP-2502/0001-IBT-00TR (IBT)
+    Format:  BSQT-2502/0001 (normal)
+             BSQT-2502/0001-IBT-00TR (IBT)
     """
     now = datetime.now()
     yy = str(now.year)[-2:]
     mm = f"{now.month:02d}"
 
-    prefix = f"{branch_code[-2:].upper()}SP-{yy}{mm}"
+    prefix = f"{branch_code[-2:].upper()}QT-{yy}{mm}"
 
     conn = get_mssql_conn()
     cursor = conn.cursor()

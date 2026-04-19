@@ -57,6 +57,13 @@ const ProjectPriceManagement = () => {
   const [items, setItems] = useState([]);
   const [branches, setBranches] = useState([]);
   
+  // Employee search state
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const [employeeDisplayName, setEmployeeDisplayName] = useState(''); // แสดงชื่อในช่อง input
+  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
+  const [filteredEmployees, setFilteredEmployees] = useState([]);
+  const employeeDropdownRef = useRef(null);
+  
   // Filter selection state
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [filterCriteria, setFilterCriteria] = useState({
@@ -90,6 +97,53 @@ const ProjectPriceManagement = () => {
     }
     loadBranches();
   }, [employee?.id]);
+
+  // Close employee dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target)) {
+        setShowEmployeeDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter employees based on search term - ใช้ API search แทน
+  useEffect(() => {
+    const searchEmployees = async () => {
+      if (employeeSearchTerm.trim() === '') {
+        setFilteredEmployees([]);
+        setShowEmployeeDropdown(false);
+        return;
+      }
+
+      try {
+        const res = await api.get('/api/employees', {
+          params: {
+            q: employeeSearchTerm.trim(),
+            page: 1,
+            page_size: 20
+          }
+        });
+        console.log('Search results:', res.data);
+        const results = res.data?.data || [];
+        setFilteredEmployees(results);
+        setShowEmployeeDropdown(results.length > 0);
+      } catch (err) {
+        console.error('Error searching employees:', err);
+        setFilteredEmployees([]);
+        setShowEmployeeDropdown(false);
+      }
+    };
+
+    // Debounce search - รอ 300ms หลังจากพิมพ์เสร็จ
+    const timeoutId = setTimeout(() => {
+      searchEmployees();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [employeeSearchTerm]);
 
   // ⭐ Load filter options when categories change
   useEffect(() => {
@@ -186,6 +240,8 @@ const ProjectPriceManagement = () => {
       remark: '',
     });
     setItems([]);
+    setEmployeeSearchTerm('');
+    setEmployeeDisplayName('');
   };
 
   // Fetch customer name from API
@@ -627,6 +683,8 @@ const ProjectPriceManagement = () => {
       setItems([]);
       setPriceMode(null);
       setShowForm(false);
+      setEmployeeSearchTerm('');
+      setEmployeeDisplayName('');
       loadProjects();
     } catch (err) {
       console.error('Error saving project:', err);
@@ -810,6 +868,26 @@ const ProjectPriceManagement = () => {
       request_date: project.request_date || new Date().toISOString().split('T')[0],
       remark: project.remark || '',
     });
+    
+    // ⭐ ถ้ามีรหัสพนักงาน ให้ดึงชื่อมาแสดง
+    if (project.request_by) {
+      setEmployeeSearchTerm(project.request_by);
+      // ดึงชื่อพนักงานจาก API
+      try {
+        const res = await api.get(`/api/employees/${project.request_by}`);
+        if (res.data && res.data.name) {
+          setEmployeeDisplayName(res.data.name);
+        } else {
+          setEmployeeDisplayName(project.request_by);
+        }
+      } catch (err) {
+        console.error('Error fetching employee name:', err);
+        setEmployeeDisplayName(project.request_by);
+      }
+    } else {
+      setEmployeeSearchTerm('');
+      setEmployeeDisplayName('');
+    }
     
     // ⭐ ดึง categories จาก items เพื่อโหลด filterOptions
     const categories = new Set();
@@ -1119,7 +1197,7 @@ const ProjectPriceManagement = () => {
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
         >
           <Plus className="w-5 h-5" />
-          เพิ่มราคาโครงการ
+          เพิ่มรหัสโครงการ
         </button>
       </div>
 
@@ -1137,7 +1215,7 @@ const ProjectPriceManagement = () => {
           {/* Mode Selection */}
           {!priceMode && !editingProjectId ? (
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <p className="text-sm font-medium text-gray-700 mb-3">เลือกประเภทราคาโครงการ:</p>
+              <p className="text-sm font-medium text-gray-700 mb-3">เลือกประเภทโครงการ:</p>
               <div className="grid grid-cols-3 gap-3">
                 <button
                   type="button"
@@ -1195,43 +1273,53 @@ const ProjectPriceManagement = () => {
           
           {(priceMode || editingProjectId) && (
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Row 1: Project Name for Branch Mode */}
-            {(priceMode === 'branch' || (editingProjectId && formData.branch_code)) && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ชื่อโครงการ <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.project_name}
-                onChange={(e) => setFormData({...formData, project_name: e.target.value})}
-                className="w-full border rounded-lg px-3 py-2"
-                placeholder="เช่น โครงการคอนโดXXX"
-              />
-            </div>
-            )}
-
-            {/* Row 1: Project Info (for project mode) */}
-            {(priceMode === 'project' || editingProjectId) && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ชื่อโครงการ <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.project_name}
-                onChange={(e) => setFormData({...formData, project_name: e.target.value})}
-                className="w-full border rounded-lg px-3 py-2"
-                placeholder="เช่น โครงการคอนโดXXX"
-              />
-            </div>
+            {/* Row 1: Project Code & Name */}
+            {editingProjectId ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    รหัสโครงการ
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.project_code}
+                    disabled
+                    className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-600 cursor-not-allowed"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ชื่อโครงการ <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.project_name}
+                    onChange={(e) => setFormData({...formData, project_name: e.target.value})}
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="เช่น โครงการคอนโดXXX"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ชื่อโครงการ <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formData.project_name}
+                  onChange={(e) => setFormData({...formData, project_name: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="เช่น โครงการคอนโดXXX"
+                />
+              </div>
             )}
             
-            {/* Row 2: Customer Info */}
+            {/* Row 2: Customer Info & Branch */}
             {(priceMode !== 'customer' || editingProjectId) && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   รหัสลูกค้า
@@ -1267,14 +1355,30 @@ const ProjectPriceManagement = () => {
                   placeholder="ชื่อลูกค้า (อัตโนมัติ)"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  สาขา 
+                </label>
+                <select
+                  value={formData.branch_code}
+                  onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="">เลือกสาขา</option>
+                  {Array.isArray(branches) && branches.map(b => (
+                    <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
+                  ))}
+                </select>
+              </div>
             </div>
             )}
 
             {(priceMode === 'customer' && !editingProjectId) && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  รหัสลูกค้า *
+                  รหัสลูกค้า 
                 </label>
                 <input
                   type="text"
@@ -1308,49 +1412,27 @@ const ProjectPriceManagement = () => {
                   placeholder="ชื่อลูกค้า (อัตโนมัติ)"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  สาขา 
+                </label>
+                <select
+                  value={formData.branch_code}
+                  onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="">เลือกสาขา</option>
+                  {Array.isArray(branches) && branches.map(b => (
+                    <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
+                  ))}
+                </select>
+              </div>
             </div>
             )}
 
-            {/* Row 3: Branch & Dates */}
-            <div className="grid grid-cols-4 gap-4">
-              {(priceMode === 'branch' || (editingProjectId && formData.branch_code)) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  สาขา <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.branch_code}
-                  onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                  required
-                >
-                  <option value="">เลือกสาขา</option>
-                  {Array.isArray(branches) && branches.map(b => (
-                    <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
-                  ))}
-                </select>
-              </div>
-              )}
-              
-              {(priceMode === 'project' || (editingProjectId && !formData.branch_code)) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  สาขา <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.branch_code}
-                  onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                  required
-                >
-                  <option value="">เลือกสาขา</option>
-                  {Array.isArray(branches) && branches.map(b => (
-                    <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
-                  ))}
-                </select>
-              </div>
-              )}
-              
+            {/* Row 3: Start & End Dates */}
+            <div className="grid grid-cols-2 gap-4">           
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   วันที่เริ่มใช้ราคา 
@@ -1374,7 +1456,10 @@ const ProjectPriceManagement = () => {
                   className="w-full border rounded-lg px-3 py-2"
                 />
               </div>
-              
+            </div>
+
+            {/* Row 4: Approval Date, Attachment & Request By */}
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   วันที่อนุมัติ
@@ -1386,37 +1471,87 @@ const ProjectPriceManagement = () => {
                   className="w-full border rounded-lg px-3 py-2"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  แนบไฟล์ภาพ
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setFormData({...formData, attachment: file});
+                    }
+                  }}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div className="relative" ref={employeeDropdownRef}>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ผู้ขอ (รหัสพนักงาน)
+                </label>
+                <input
+                  type="text"
+                  value={employeeDisplayName}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEmployeeDisplayName(value);
+                    setEmployeeSearchTerm(value);
+                    setFormData({...formData, request_by: ''}); // Clear request_by เมื่อพิมพ์ใหม่
+                  }}
+                  onFocus={() => {
+                    if (filteredEmployees.length > 0) {
+                      setShowEmployeeDropdown(true);
+                    }
+                  }}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="ค้นหารหัสหรือชื่อพนักงาน"
+                />
+                
+                {showEmployeeDropdown && filteredEmployees.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {filteredEmployees.map((emp) => (
+                      <div
+                        key={emp.id}
+                        onClick={() => {
+                          setEmployeeDisplayName(emp.name); // แสดงชื่อ
+                          setEmployeeSearchTerm(emp.name); // ใช้ชื่อสำหรับ search
+                          setFormData({...formData, request_by: emp.id}); // เก็บรหัสใน formData
+                          setShowEmployeeDropdown(false);
+                        }}
+                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="font-medium text-sm">{emp.id}</div>
+                        <div className="text-xs text-gray-600">{emp.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Debug info */}
+                {employeeSearchTerm && filteredEmployees.length === 0 && (
+                  <div className="text-xs text-red-500 mt-1">
+                    ไม่พบพนักงาน
+                  </div>
+                )}
+              </div>
             </div>
 
-
-
-            {/* Row 4: Request By & Remark */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  ผู้ขอ
-                </label>
-                <input
-                  type="text"
-                  value={formData.request_by}
-                  onChange={(e) => setFormData({...formData, request_by: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="ชื่อผู้ขอ"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  หมายเหตุ
-                </label>
-                <input
-                  type="text"
-                  value={formData.remark}
-                  onChange={(e) => setFormData({...formData, remark: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="กรอกรายละเอียดรายการสินค้า เช่น กระจกใส AGC 6 มม."
-                />
-              </div>
+            {/* Row 5: Remark */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                หมายเหตุ
+              </label>
+              <input
+                type="text"
+                value={formData.remark}
+                onChange={(e) => setFormData({...formData, remark: e.target.value})}
+                className="w-full border rounded-lg px-3 py-2"
+                placeholder="กรอกรายละเอียดรายการสินค้า เช่น กระจกใส AGC 6 มม."
+              />
             </div>
 
             {/* Items Section */}
@@ -1480,6 +1615,8 @@ const ProjectPriceManagement = () => {
                   setShowForm(false);
                   setPriceMode(null);
                   setEditingProjectId(null);
+                  setEmployeeSearchTerm('');
+                  setEmployeeDisplayName('');
                 }}
                 className="px-4 py-2 border rounded-lg hover:bg-gray-50"
               >
@@ -1489,7 +1626,7 @@ const ProjectPriceManagement = () => {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                {editingProjectId ? 'อัพเดท' : 'บันทึก'}
+                {editingProjectId ? 'อัพเดท' : 'บันทึกราคาโครงการ'}
               </button>
             </div>
           </form>
