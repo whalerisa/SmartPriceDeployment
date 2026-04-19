@@ -1210,7 +1210,7 @@ const ProjectPriceManagement = () => {
 
       {showForm && (
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4">เพิ่มราคาโครงการใหม่</h2>
+          <h2 className="text-xl font-bold mb-4">เพิ่มรหัสโครงการใหม่</h2>
           
           {/* Mode Selection */}
           {!priceMode && !editingProjectId ? (
@@ -1626,7 +1626,7 @@ const ProjectPriceManagement = () => {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
-                {editingProjectId ? 'อัพเดท' : 'บันทึกราคาโครงการ'}
+                {editingProjectId ? 'อัพเดท' : 'บันทึก'}
               </button>
             </div>
           </form>

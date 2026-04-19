@@ -249,8 +249,8 @@ function Dashboard() {
               onClick={() => navigate("/project-price")}
             >
               <img src="/assets/project.png" className="w-16 h-16 mb-4" />
-              <h2 className="text-4xl font-bold">ราคาโครงการ</h2>
-              <p className="mt-2 text-lg text-white/70">จัดการราคาโครงการ</p>
+              <h2 className="text-4xl font-bold">สร้างรหัสโครงการ/บันทึกราคาโครงการ</h2>
+              <p className="mt-2 text-lg text-white/70">จัดการโครงการ</p>
             </div>
           )}
         </div>
