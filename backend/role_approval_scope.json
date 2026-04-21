@@ -1,0 +1,26 @@
+{
+  "Sales": {
+    "min_level": "R2",
+    "max_level": "R2"
+  },
+  "ZM": {
+    "min_level": "R1",
+    "max_level": "W2"
+  },
+  "RM": {
+    "min_level": "W2",
+    "max_level": "W1"
+  },
+  "SDM": {
+    "min_level": "W1",
+    "max_level": "SDM"
+  },
+  "PM": {
+    "min_level": "SDM",
+    "max_level": "SDM"
+  },
+  "CEO": {
+    "min_level": "R2",
+    "max_level": "SDM"
+  }
+}

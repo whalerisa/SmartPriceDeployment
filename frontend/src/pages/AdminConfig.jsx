@@ -12,6 +12,8 @@ function AdminConfig() {
   const [config, setConfig] = useState(null);
   const [editedConfig, setEditedConfig] = useState(null);
   const [message, setMessage] = useState(null);
+  const [availableRoles, setAvailableRoles] = useState([]);
+  const [newRoleName, setNewRoleName] = useState("");
 
   // ตรวจสอบสิทธิ์ admin
   useEffect(() => {
@@ -35,6 +37,15 @@ function AdminConfig() {
       const configRes = await api.get("/api/config/settings");
       setConfig(configRes.data);
       setEditedConfig(JSON.parse(JSON.stringify(configRes.data)));
+      
+      // Load available roles
+      try {
+        const rolesRes = await api.get("/api/config/roles");
+        setAvailableRoles(rolesRes.data || []);
+      } catch (err) {
+        console.error("Failed to load roles:", err);
+        setAvailableRoles(["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"]);
+      }
     } catch (err) {
       setMessage({
         type: "error",
@@ -46,12 +57,64 @@ function AdminConfig() {
     }
   };
 
+  const handleAddRole = async () => {
+    const roleCode = newRoleName.trim();
+    
+    if (!roleCode) {
+      setMessage({
+        type: "error",
+        text: "กรุณากรอกชื่อ Role",
+      });
+      return;
+    }
+    
+    try {
+      await api.post("/api/config/roles", {
+        role_code: roleCode,
+        role_name_thai: roleCode,
+        role_display_name: roleCode,
+      });
+      
+      setMessage({
+        type: "success",
+        text: `เพิ่ม Role "${roleCode}" สำเร็จ - สามารถกำหนดสิทธิ์ด้านล่างได้เลย`,
+      });
+      
+      setNewRoleName("");
+      await loadConfig();
+      
+      setTimeout(() => setMessage(null), 5000);
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err.response?.data?.detail || "เกิดข้อผิดพลาดในการเพิ่ม Role",
+      });
+    }
+  };
+
+  const handleDeleteRole = async (role) => {
+    if (!confirm(`ต้องการลบ Role "${role}" หรือไม่?\n\n⚠️ การลบจะทำให้ Role นี้หายจากการกำหนดสิทธิ์ทั้งหมด`)) return;
+    
+    try {
+      await api.delete(`/api/config/roles/${role}`);
+      setMessage({
+        type: "success",
+        text: `ลบ Role "${role}" สำเร็จ`,
+      });
+      await loadConfig();
+      setTimeout(() => setMessage(null), 3000);
+    } catch (err) {
+      setMessage({
+        type: "error",
+        text: err.response?.data?.detail || "เกิดข้อผิดพลาดในการลบ Role",
+      });
+    }
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
       await api.put("/api/config/settings", editedConfig);
-      
-      // โหลดข้อมูล config ใหม่จาก server เพื่อให้แน่ใจว่าข้อมูลตรงกัน
       await loadConfig();
       
       setMessage({
@@ -93,13 +156,15 @@ function AdminConfig() {
     return null;
   }
 
+  const builtInRoles = ["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"];
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <h1 className="text-3xl font-bold text-gray-900">⚙️ การตั้งค่าระบบ</h1>
-          <p className="text-gray-600 mt-2">จัดการการตั้งค่าและการเชื่อมต่อ API</p>
+          <p className="text-gray-600 mt-2">จัดการสิทธิ์การเข้าถึงตาม Role</p>
         </div>
       </div>
 
@@ -118,711 +183,667 @@ function AdminConfig() {
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Tabs */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200">
-          {[
-            { id: "price", label: "💰 ราคา", icon: "💰" },
-            { id: "access", label: "🔐 สิทธิ์การเข้าถึง", icon: "🔐" },
-            { id: "system", label: "⚙️ ระบบ", icon: "⚙️" },
-          ].map((tab) => (
+        <div className="bg-white rounded-lg shadow">
+          {/* Tab Navigation */}
+          <div className="flex border-b border-gray-200">
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-600 hover:text-gray-900"
+              onClick={() => setActiveTab("price")}
+              className={`px-6 py-4 font-medium transition-colors ${
+                activeTab === "price"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
               }`}
             >
-              {tab.label}
+              💰 ระดับราคาอนุมัติ
             </button>
-          ))}
-        </div>
+            <button
+              onClick={() => setActiveTab("access")}
+              className={`px-6 py-4 font-medium transition-colors ${
+                activeTab === "access"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              🔐 สิทธิ์การเข้าถึง
+            </button>
+            <button
+              onClick={() => setActiveTab("system")}
+              className={`px-6 py-4 font-medium transition-colors ${
+                activeTab === "system"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              ⚙️ การตั้งค่าระบบ
+            </button>
+          </div>
 
-        {/* Tab Content */}
-        <div className="bg-white rounded-lg shadow">
-          {/* API Tab */}
-          {activeTab === "api" && (
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-6">สถานะการเชื่อมต่อ API</h2>
+          {/* Tab Content */}
+          <div className="p-6">
+            {/* Price Approval Tab */}
+            {activeTab === "price" && (
+              <div>
 
-              {/* API Status Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Array.isArray(apiStatus) && apiStatus.map((api) => (
-                  <div
-                    key={api.api_name}
-                    className="border rounded-lg p-4 hover:shadow-md transition-shadow"
+          {/* Price Approval Levels Configuration */}
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">ขอบเขตการอนุมัติราคาตาม Role</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              กำหนดขอบเขตการอนุมัติราคาสำหรับแต่ละ Role โดยใช้ระดับราคา (Price Levels)
+            </p>
+
+            {/* Approval Logic Reference */}
+            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 className="font-semibold text-blue-900 mb-2">📋 ลำดับการอนุมัติ</h4>
+              <div className="text-xs text-gray-700 space-y-1">
+                <p>• <strong>ราคา ≥ R1</strong>: ไม่ต้องขออนุมัติ</p>
+                <p>• <strong>R1 &gt; ราคา ≥ W2</strong>: ZM_ONLY (อนุมัติจาก ZM เท่านั้น)</p>
+                <p>• <strong>W2 &gt; ราคา ≥ W1</strong>: ZM_THEN_RM (ต้องผ่าน ZM → RM)</p>
+                <p>• <strong>W1 &gt; ราคา ≥ SDM</strong>: SDM_APPROVAL (ต้องผ่าน ZM → RM → SDM)</p>
+                <p>• <strong>ราคา &lt; SDM</strong>: PM_APPROVAL (ต้องผ่าน ZM → RM → SDM → PM)</p>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Sales */}
+              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                <div className="mb-4">
+                  <h4 className="font-semibold text-gray-900">Sales</h4>
+                  <p className="text-xs text-gray-500">ผู้ขายทั่วไป - ไม่ต้องขออนุมัติ</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.Sales?.min_level || "R1"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            Sales: {
+                              ...editedConfig.price_config?.role_approval_scope?.Sales,
+                              min_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900">
-                          {api.api_name}
-                        </h3>
-                        <p className="text-sm text-gray-600 mt-1 break-all">
-                          {api.url}
-                        </p>
-                      </div>
-                      <div
-                        className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ml-2 ${
-                          api.status === "connected"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {api.status === "connected" ? "✓ เชื่อมต่อ" : "✗ ไม่เชื่อมต่อ"}
-                      </div>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                  <span className="text-sm text-gray-600">ขึ้นไป</span>
+                </div>
+              </div>
+
+              {/* ZM */}
+              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                <div className="mb-4">
+                  <h4 className="font-semibold text-gray-900">ZM (Zone Manager)</h4>
+                  <p className="text-xs text-gray-500">ผู้จัดการเขต</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.ZM?.min_level || "R1"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            ZM: {
+                              ...editedConfig.price_config?.role_approval_scope?.ZM,
+                              min_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                  <span className="text-sm text-gray-600">ถึง</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.ZM?.max_level || "W2"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            ZM: {
+                              ...editedConfig.price_config?.role_approval_scope?.ZM,
+                              max_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* RM */}
+              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                <div className="mb-4">
+                  <h4 className="font-semibold text-gray-900">RM (Regional Manager)</h4>
+                  <p className="text-xs text-gray-500">ผู้จัดการภูมิภาค</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.RM?.min_level || "W2"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            RM: {
+                              ...editedConfig.price_config?.role_approval_scope?.RM,
+                              min_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                  <span className="text-sm text-gray-600">ถึง</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.RM?.max_level || "W1"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            RM: {
+                              ...editedConfig.price_config?.role_approval_scope?.RM,
+                              max_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* SDM */}
+              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                <div className="mb-4">
+                  <h4 className="font-semibold text-gray-900">SDM (Sales Director Manager)</h4>
+                  <p className="text-xs text-gray-500">ผู้บริหารฝ่ายขาย</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.SDM?.min_level || "W1"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            SDM: {
+                              ...editedConfig.price_config?.role_approval_scope?.SDM,
+                              min_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                  <span className="text-sm text-gray-600">ถึง</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.SDM?.max_level || "SDM"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            SDM: {
+                              ...editedConfig.price_config?.role_approval_scope?.SDM,
+                              max_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* PM */}
+              <div className="border border-gray-300 rounded-lg p-4 bg-blue-50 border-blue-300">
+                <div className="mb-4">
+                  <h4 className="font-semibold text-gray-900">PM (Product Manager)</h4>
+                  <p className="text-xs text-gray-500">ผู้จัดการสินค้า - อนุมัติราคาต่ำสุด</p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
+                  <select
+                    value={editedConfig?.price_config?.role_approval_scope?.PM?.min_level || "SDM"}
+                    onChange={(e) =>
+                      setEditedConfig({
+                        ...editedConfig,
+                        price_config: {
+                          ...editedConfig.price_config,
+                          role_approval_scope: {
+                            ...editedConfig.price_config?.role_approval_scope,
+                            PM: {
+                              ...editedConfig.price_config?.role_approval_scope?.PM,
+                              min_level: e.target.value,
+                            },
+                          },
+                        },
+                      })
+                    }
+                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  >
+                    <option value="R2">R2</option>
+                    <option value="R1">R1</option>
+                    <option value="W2">W2</option>
+                    <option value="W1">W1</option>
+                    <option value="SDM">SDM</option>
+                  </select>
+                  <span className="text-sm text-gray-600">ลงมา</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+              </div>
+            )}
+
+            {/* Access Control Tab */}
+            {activeTab === "access" && (
+              <div>
+                {/* Role Management Section */}
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h3 className="font-semibold text-blue-900 mb-3">➕ เพิ่ม Role ใหม่</h3>
+                  <p className="text-xs text-gray-600 mb-3">
+                    💡 Role หลักถูกสร้างที่เว็บ UX แล้ว ที่นี่เพียงเพิ่ม Role เข้ามาเพื่อกำหนดสิทธิ์การเข้าถึงหน้าต่างๆ
+                  </p>
+                  
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        ชื่อ Role (ตรงกับที่สร้างในเว็บ UX)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="เช่น Sales_Manager, Marketing_Head"
+                        value={newRoleName}
+                        onChange={(e) => setNewRoleName(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddRole()}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">{api.message}</p>
-                  </div>
-                ))}
-                {(!Array.isArray(apiStatus) || apiStatus.length === 0) && (
-                  <div className="col-span-2 text-center text-gray-500 py-8">
-                    ไม่มีข้อมูลสถานะ API
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Price Tab */}
-          {activeTab === "price" && (
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-6">ขอบเขตการอนุมัติราคาตาม Role</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                กำหนดขอบเขตการอนุมัติราคาสำหรับแต่ละ Role โดยใช้ระดับราคา (Price Levels)
-              </p>
-
-              <div className="space-y-4">
-                {/* Sales Role */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <label className="w-32 font-medium text-gray-700">Sales:</label>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.Sales?.min_level || "R2"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              Sales: {
-                                ...editedConfig.price_config.role_approval_scope?.Sales,
-                                min_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <button
+                      onClick={handleAddRole}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium whitespace-nowrap"
                     >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                    <span className="text-gray-600">&gt;= ราคา &gt;=</span>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.Sales?.max_level || "R2"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              Sales: {
-                                ...editedConfig.price_config.role_approval_scope?.Sales,
-                                max_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
+                      ➕ เพิ่ม
+                    </button>
                   </div>
                 </div>
 
-                {/* ZM Role */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <label className="w-32 font-medium text-gray-700">ZM:</label>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.ZM?.min_level || "R1"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              ZM: {
-                                ...editedConfig.price_config.role_approval_scope?.ZM,
-                                min_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                    <span className="text-gray-600">&gt;= ราคา &gt;=</span>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.ZM?.max_level || "W2"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              ZM: {
-                                ...editedConfig.price_config.role_approval_scope?.ZM,
-                                max_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
+                {/* Current Roles Display */}
+                <div className="mb-6">
+                  <h3 className="font-semibold text-gray-900 mb-2">Role ที่มีในระบบ ({availableRoles.length})</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {availableRoles.map((role) => {
+                      const isBuiltIn = builtInRoles.includes(role);
+                      return (
+                        <div
+                          key={role}
+                          className={`inline-flex items-center gap-2 px-3 py-1 rounded-md text-sm font-medium ${
+                            isBuiltIn
+                              ? "bg-gray-200 text-gray-700"
+                              : "bg-green-100 text-green-800"
+                          }`}
+                        >
+                          <span>{role}</span>
+                          {!isBuiltIn && (
+                            <button
+                              onClick={() => handleDeleteRole(role)}
+                              className="text-red-600 hover:text-red-800 font-bold text-base leading-none"
+                              title="ลบ Role"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-
-                {/* RM Role */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <label className="w-32 font-medium text-gray-700">RM:</label>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.RM?.min_level || "W2"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              RM: {
-                                ...editedConfig.price_config.role_approval_scope?.RM,
-                                min_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                    <span className="text-gray-600">&gt;= ราคา &gt;=</span>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.RM?.max_level || "W1"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              RM: {
-                                ...editedConfig.price_config.role_approval_scope?.RM,
-                                max_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* SDM Role */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <label className="w-32 font-medium text-gray-700">SDM:</label>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.SDM?.min_level || "W1"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              SDM: {
-                                ...editedConfig.price_config.role_approval_scope?.SDM,
-                                min_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                    <span className="text-gray-600">&gt;= ราคา &gt;=</span>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.SDM?.max_level || "SDM"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              SDM: {
-                                ...editedConfig.price_config.role_approval_scope?.SDM,
-                                max_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* PM Role */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <label className="w-32 font-medium text-gray-700">PM:</label>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.PM?.min_level || "R2"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              PM: {
-                                ...editedConfig.price_config.role_approval_scope?.PM,
-                                min_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                    <span className="text-gray-600">&gt;= ราคา &gt;=</span>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.PM?.max_level || "SDM"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              PM: {
-                                ...editedConfig.price_config.role_approval_scope?.PM,
-                                max_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* CEO Role */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-4">
-                    <label className="w-32 font-medium text-gray-700">CEO:</label>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.CEO?.min_level || "R2"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              CEO: {
-                                ...editedConfig.price_config.role_approval_scope?.CEO,
-                                min_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                    <span className="text-gray-600">&gt;= ราคา &gt;=</span>
-                    <select
-                      value={editedConfig?.price_config?.role_approval_scope?.CEO?.max_level || "SDM"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          price_config: {
-                            ...editedConfig.price_config,
-                            role_approval_scope: {
-                              ...editedConfig.price_config.role_approval_scope,
-                              CEO: {
-                                ...editedConfig.price_config.role_approval_scope?.CEO,
-                                max_level: e.target.value,
-                              },
-                            },
-                          },
-                        })
-                      }
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="R2">R2</option>
-                      <option value="R1">R1</option>
-                      <option value="W2">W2</option>
-                      <option value="W1">W1</option>
-                      <option value="SDM">SDM</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Info Box */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
-                  <h3 className="font-semibold text-blue-900 mb-2">
-                    📋 คำอธิบายระดับราคา
-                  </h3>
-                  <p className="text-sm text-blue-800">
-                    ลำดับระดับราคา (จากสูงไปต่ำ): <strong>R2 &gt; R1 &gt; W2 &gt; W1 &gt; SDM</strong>
-                  </p>
-                  <p className="text-sm text-blue-800 mt-2">
-                    ตัวอย่าง: ZM: R1 &gt;= ราคา &gt;= W2 หมายความว่า ZM มีสิทธิ์อนุมัติราคาที่อยู่ระหว่าง R1 (สูง) ถึง W2 (ต่ำ)
+                  <p className="text-xs text-gray-500 mt-2">
+                    สีเทา = Role ในระบบ | สีเขียว = Role ที่เพิ่มเอง (คลิก × เพื่อลบ)
                   </p>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* Access Control Tab */}
-          {activeTab === "access" && (
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-6">🔐 สิทธิ์การเข้าถึงหน้าตาม Role</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                กำหนดว่า Role ไหนสามารถเข้าถึงหน้าไหนได้บ้าง
-              </p>
+                <hr className="my-6 border-gray-300" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">กำหนดสิทธิ์การเข้าถึงหน้าต่างๆ</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  เลือก Role ที่สามารถเข้าถึงแต่ละหน้าได้
+                </p>
 
-              <div className="space-y-4">
-                {/* สร้างใบเสนอราคา */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="mb-3">
-                    <h4 className="font-medium text-gray-900">📝 สร้างใบเสนอราคา</h4>
-                    <p className="text-xs text-gray-500">Create Quote</p>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-3">
-                    {["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"].map((role) => (
-                      <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editedConfig?.access_control?.page_access?.create_quote?.allowed_roles?.includes(role) || false}
-                          onChange={(e) => {
-                            const currentRoles = editedConfig?.access_control?.page_access?.create_quote?.allowed_roles || [];
-                            const newAllowedRoles = e.target.checked
-                              ? [...currentRoles, role]
-                              : currentRoles.filter(r => r !== role);
-                            
-                            setEditedConfig({
-                              ...editedConfig,
-                              access_control: {
-                                ...editedConfig.access_control,
-                                page_access: {
-                                  ...editedConfig.access_control?.page_access,
-                                  create_quote: {
-                                    page_name: "create_quote",
-                                    page_label: "สร้างใบเสนอราคา",
-                                    allowed_roles: newAllowedRoles,
+                <div className="space-y-4">
+                  {/* สร้างใบเสนอราคา */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <div className="mb-3">
+                      <h4 className="font-medium text-gray-900">📝 สร้างใบเสนอราคา</h4>
+                      <p className="text-xs text-gray-500">Create Quote</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3">
+                      {availableRoles.map((role) => (
+                        <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editedConfig?.access_control?.page_access?.create_quote?.allowed_roles?.includes(role) || false}
+                            onChange={(e) => {
+                              const currentRoles = editedConfig?.access_control?.page_access?.create_quote?.allowed_roles || [];
+                              const newAllowedRoles = e.target.checked
+                                ? [...currentRoles, role]
+                                : currentRoles.filter(r => r !== role);
+                              
+                              setEditedConfig({
+                                ...editedConfig,
+                                access_control: {
+                                  ...editedConfig.access_control,
+                                  page_access: {
+                                    ...editedConfig.access_control?.page_access,
+                                    create_quote: {
+                                      page_name: "create_quote",
+                                      page_label: "สร้างใบเสนอราคา",
+                                      allowed_roles: newAllowedRoles,
+                                    },
                                   },
                                 },
-                              },
-                            });
-                          }}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
-                      </label>
-                    ))}
+                              });
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* สร้างรหัสโครงการ */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="mb-3">
-                    <h4 className="font-medium text-gray-900">🏗️ สร้างรหัสโครงการ</h4>
-                    <p className="text-xs text-gray-500">Project Price Management</p>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-3">
-                    {["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"].map((role) => (
-                      <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editedConfig?.access_control?.page_access?.project_price?.allowed_roles?.includes(role) || false}
-                          onChange={(e) => {
-                            const currentRoles = editedConfig?.access_control?.page_access?.project_price?.allowed_roles || [];
-                            const newAllowedRoles = e.target.checked
-                              ? [...currentRoles, role]
-                              : currentRoles.filter(r => r !== role);
-                            
-                            setEditedConfig({
-                              ...editedConfig,
-                              access_control: {
-                                ...editedConfig.access_control,
-                                page_access: {
-                                  ...editedConfig.access_control?.page_access,
-                                  project_price: {
-                                    page_name: "project_price",
-                                    page_label: "สร้างรหัสโครงการ",
-                                    allowed_roles: newAllowedRoles,
+                  {/* สร้างรหัสโครงการ */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <div className="mb-3">
+                      <h4 className="font-medium text-gray-900">🏗️ สร้างรหัสโครงการ</h4>
+                      <p className="text-xs text-gray-500">Project Price Management</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3">
+                      {availableRoles.map((role) => (
+                        <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editedConfig?.access_control?.page_access?.project_price?.allowed_roles?.includes(role) || false}
+                            onChange={(e) => {
+                              const currentRoles = editedConfig?.access_control?.page_access?.project_price?.allowed_roles || [];
+                              const newAllowedRoles = e.target.checked
+                                ? [...currentRoles, role]
+                                : currentRoles.filter(r => r !== role);
+                              
+                              setEditedConfig({
+                                ...editedConfig,
+                                access_control: {
+                                  ...editedConfig.access_control,
+                                  page_access: {
+                                    ...editedConfig.access_control?.page_access,
+                                    project_price: {
+                                      page_name: "project_price",
+                                      page_label: "สร้างรหัสโครงการ",
+                                      allowed_roles: newAllowedRoles,
+                                    },
                                   },
                                 },
-                              },
-                            });
-                          }}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
-                      </label>
-                    ))}
+                              });
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* หน้าอนุมัติราคา */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="mb-3">
-                    <h4 className="font-medium text-gray-900">✅ หน้าอนุมัติราคา</h4>
-                    <p className="text-xs text-gray-500">Special Price Approval</p>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-3">
-                    {["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"].map((role) => (
-                      <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editedConfig?.access_control?.page_access?.special_price_approval?.allowed_roles?.includes(role) || false}
-                          onChange={(e) => {
-                            const currentRoles = editedConfig?.access_control?.page_access?.special_price_approval?.allowed_roles || [];
-                            const newAllowedRoles = e.target.checked
-                              ? [...currentRoles, role]
-                              : currentRoles.filter(r => r !== role);
-                            
-                            setEditedConfig({
-                              ...editedConfig,
-                              access_control: {
-                                ...editedConfig.access_control,
-                                page_access: {
-                                  ...editedConfig.access_control?.page_access,
-                                  special_price_approval: {
-                                    page_name: "special_price_approval",
-                                    page_label: "หน้าอนุมัติราคา",
-                                    allowed_roles: newAllowedRoles,
+                  {/* หน้าอนุมัติราคา */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <div className="mb-3">
+                      <h4 className="font-medium text-gray-900">✅ หน้าอนุมัติราคา</h4>
+                      <p className="text-xs text-gray-500">Special Price Approval</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3">
+                      {availableRoles.map((role) => (
+                        <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editedConfig?.access_control?.page_access?.special_price_approval?.allowed_roles?.includes(role) || false}
+                            onChange={(e) => {
+                              const currentRoles = editedConfig?.access_control?.page_access?.special_price_approval?.allowed_roles || [];
+                              const newAllowedRoles = e.target.checked
+                                ? [...currentRoles, role]
+                                : currentRoles.filter(r => r !== role);
+                              
+                              setEditedConfig({
+                                ...editedConfig,
+                                access_control: {
+                                  ...editedConfig.access_control,
+                                  page_access: {
+                                    ...editedConfig.access_control?.page_access,
+                                    special_price_approval: {
+                                      page_name: "special_price_approval",
+                                      page_label: "หน้าอนุมัติราคา",
+                                      allowed_roles: newAllowedRoles,
+                                    },
                                   },
                                 },
-                              },
-                            });
-                          }}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
-                      </label>
-                    ))}
+                              });
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* เพิ่มราคา */}
-                <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                  <div className="mb-3">
-                    <h4 className="font-medium text-gray-900">💰 เพิ่มราคา</h4>
-                    <p className="text-xs text-gray-500">Update Price</p>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-3">
-                    {["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"].map((role) => (
-                      <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={editedConfig?.access_control?.page_access?.update_price?.allowed_roles?.includes(role) || false}
-                          onChange={(e) => {
-                            const currentRoles = editedConfig?.access_control?.page_access?.update_price?.allowed_roles || [];
-                            const newAllowedRoles = e.target.checked
-                              ? [...currentRoles, role]
-                              : currentRoles.filter(r => r !== role);
-                            
-                            setEditedConfig({
-                              ...editedConfig,
-                              access_control: {
-                                ...editedConfig.access_control,
-                                page_access: {
-                                  ...editedConfig.access_control?.page_access,
-                                  update_price: {
-                                    page_name: "update_price",
-                                    page_label: "เพิ่มราคา",
-                                    allowed_roles: newAllowedRoles,
+                  {/* เพิ่มราคา */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <div className="mb-3">
+                      <h4 className="font-medium text-gray-900">💰 เพิ่มราคา</h4>
+                      <p className="text-xs text-gray-500">Update Price</p>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-3">
+                      {availableRoles.map((role) => (
+                        <label key={role} className="inline-flex items-center px-3 py-2 bg-white border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={editedConfig?.access_control?.page_access?.update_price?.allowed_roles?.includes(role) || false}
+                            onChange={(e) => {
+                              const currentRoles = editedConfig?.access_control?.page_access?.update_price?.allowed_roles || [];
+                              const newAllowedRoles = e.target.checked
+                                ? [...currentRoles, role]
+                                : currentRoles.filter(r => r !== role);
+                              
+                              setEditedConfig({
+                                ...editedConfig,
+                                access_control: {
+                                  ...editedConfig.access_control,
+                                  page_access: {
+                                    ...editedConfig.access_control?.page_access,
+                                    update_price: {
+                                      page_name: "update_price",
+                                      page_label: "เพิ่มราคา",
+                                      allowed_roles: newAllowedRoles,
+                                    },
                                   },
                                 },
-                              },
-                            });
-                          }}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
-                      </label>
-                    ))}
+                              });
+                            }}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm font-medium text-gray-700">{role}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* System Tab */}
-          {activeTab === "system" && (
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-6">ข้อมูลระบบ</h2>
+            {/* System Settings Tab */}
+            {activeTab === "system" && (
+              <div>
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">⚙️ การตั้งค่าระบบ</h3>
+                  <p className="text-sm text-gray-600 mb-6">
+                    ตั้งค่าพารามิเตอร์ระบบต่างๆ เช่น อัตราภาษี เขตเวลา ภาษา
+                  </p>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Base URL
-                  </label>
-                  <input
-                    type="text"
-                    value={editedConfig?.system_config?.base_url || ""}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        system_config: {
-                          ...editedConfig.system_config,
-                          base_url: e.target.value,
-                        },
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                  {/* VAT Rate */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
+                    <div className="mb-4">
+                      <h4 className="font-semibold text-gray-900">💵 อัตราภาษีมูลค่าเพิ่ม (VAT)</h4>
+                      <p className="text-xs text-gray-500">ใช้ในการคำนวณภาษีของใบเสนอราคา</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="1"
+                        value={editedConfig?.system_config?.vat_rate || 0.07}
+                        onChange={(e) =>
+                          setEditedConfig({
+                            ...editedConfig,
+                            system_config: {
+                              ...editedConfig.system_config,
+                              vat_rate: parseFloat(e.target.value) || 0.07,
+                            },
+                          })
+                        }
+                        className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium w-32"
+                      />
+                      <span className="text-sm text-gray-600">
+                        ({((editedConfig?.system_config?.vat_rate || 0.07) * 100).toFixed(1)}%)
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      ตัวอย่าง: 0.07 = 7%, 0.10 = 10%
+                    </p>
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Timezone
-                  </label>
-                  <select
-                    value={editedConfig?.system_config?.timezone || "Asia/Bangkok"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        system_config: {
-                          ...editedConfig.system_config,
-                          timezone: e.target.value,
-                        },
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Asia/Bangkok">Asia/Bangkok (ไทย)</option>
-                    <option value="UTC">UTC</option>
-                    <option value="Asia/Singapore">Asia/Singapore</option>
-                    <option value="Asia/Tokyo">Asia/Tokyo</option>
-                  </select>
-                </div>
+                  {/* Timezone */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
+                    <div className="mb-4">
+                      <h4 className="font-semibold text-gray-900">🌍 เขตเวลา</h4>
+                      <p className="text-xs text-gray-500">ใช้สำหรับแสดงเวลาในระบบ</p>
+                    </div>
+                    <input
+                      type="text"
+                      value={editedConfig?.system_config?.timezone || "Asia/Bangkok"}
+                      onChange={(e) =>
+                        setEditedConfig({
+                          ...editedConfig,
+                          system_config: {
+                            ...editedConfig.system_config,
+                            timezone: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    ภาษา
-                  </label>
-                  <select
-                    value={editedConfig?.system_config?.language || "th"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        system_config: {
-                          ...editedConfig.system_config,
-                          language: e.target.value,
-                        },
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="th">ไทย</option>
-                    <option value="en">English</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Version
-                  </label>
-                  <input
-                    type="text"
-                    value={editedConfig?.system_config?.version || ""}
-                    disabled
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 text-gray-600"
-                  />
+                  {/* Language */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <div className="mb-4">
+                      <h4 className="font-semibold text-gray-900">🗣️ ภาษา</h4>
+                      <p className="text-xs text-gray-500">ภาษาที่ใช้ในระบบ</p>
+                    </div>
+                    <select
+                      value={editedConfig?.system_config?.language || "th"}
+                      onChange={(e) =>
+                        setEditedConfig({
+                          ...editedConfig,
+                          system_config: {
+                            ...editedConfig.system_config,
+                            language: e.target.value,
+                          },
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="th">ไทย (Thai)</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Action Buttons */}

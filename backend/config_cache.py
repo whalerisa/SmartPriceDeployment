@@ -64,11 +64,12 @@ def clear_cache() -> None:
 
 def get_page_access_config() -> Dict[str, Any]:
     """
-    Get page access configuration from cache.
+    Get page access configuration from cache or file.
     
     Returns:
         Dictionary of page access configuration
     """
+    # Check cache first
     cached = get_cached_config("PAGE_ACCESS_CONFIG")
     
     if cached:
@@ -79,8 +80,21 @@ def get_page_access_config() -> Dict[str, Any]:
         except:
             logger.error("Failed to parse cached PAGE_ACCESS_CONFIG")
     
+    # Try to load from JSON file
+    try:
+        config_file = os.path.join(os.path.dirname(__file__), "page_access_config.json")
+        if os.path.exists(config_file):
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                # Cache it for future use
+                set_cached_config("PAGE_ACCESS_CONFIG", config)
+                logger.info(f"Loaded page access config from {config_file}")
+                return config
+    except Exception as e:
+        logger.error(f"Failed to load page access config from file: {e}")
+    
     # Default configuration
-    return {
+    default_config = {
         "create_quote": {
             "page_name": "create_quote",
             "page_label": "สร้างใบเสนอราคา",
@@ -102,26 +116,39 @@ def get_page_access_config() -> Dict[str, Any]:
             "allowed_roles": ["PM", "SDM", "CEO", "Admin"]
         },
     }
+    return default_config
 
 
 def set_page_access_config(config: Dict[str, Any]) -> None:
     """
-    Set page access configuration in cache.
+    Set page access configuration in cache and persist to file.
     
     Args:
         config: Page access configuration dictionary
     """
+    # Update cache
     set_cached_config("PAGE_ACCESS_CONFIG", config)
-    logger.info(f"Page access config updated for {len(config)} pages")
+    
+    # Persist to JSON file
+    try:
+        config_file = os.path.join(os.path.dirname(__file__), "page_access_config.json")
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        logger.info(f"Page access config updated and saved to {config_file} for {len(config)} pages")
+    except Exception as e:
+        logger.error(f"Failed to save page access config to file: {e}")
+        # Still update cache even if file save fails
+        logger.info(f"Page access config updated in cache for {len(config)} pages")
 
 
 def get_role_approval_scope() -> Dict[str, Any]:
     """
-    Get role approval scope configuration from cache.
+    Get role approval scope configuration from cache or file.
     
     Returns:
         Dictionary of role approval scope configuration
     """
+    # Check cache first
     cached = get_cached_config("ROLE_APPROVAL_SCOPE")
     
     if cached:
@@ -132,8 +159,21 @@ def get_role_approval_scope() -> Dict[str, Any]:
         except:
             logger.error("Failed to parse cached ROLE_APPROVAL_SCOPE")
     
+    # Try to load from JSON file
+    try:
+        config_file = os.path.join(os.path.dirname(__file__), "role_approval_scope.json")
+        if os.path.exists(config_file):
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                # Cache it for future use
+                set_cached_config("ROLE_APPROVAL_SCOPE", config)
+                logger.info(f"Loaded role approval scope from {config_file}")
+                return config
+    except Exception as e:
+        logger.error(f"Failed to load role approval scope from file: {e}")
+    
     # Default configuration
-    return {
+    default_config = {
         "Sales": {"min_level": "R2", "max_level": "R2"},
         "ZM": {"min_level": "R1", "max_level": "W2"},
         "RM": {"min_level": "W2", "max_level": "W1"},
@@ -141,14 +181,26 @@ def get_role_approval_scope() -> Dict[str, Any]:
         "PM": {"min_level": "R2", "max_level": "SDM"},
         "CEO": {"min_level": "R2", "max_level": "SDM"},
     }
+    return default_config
 
 
 def set_role_approval_scope(config: Dict[str, Any]) -> None:
     """
-    Set role approval scope configuration in cache.
+    Set role approval scope configuration in cache and persist to file.
     
     Args:
         config: Role approval scope configuration dictionary
     """
+    # Update cache
     set_cached_config("ROLE_APPROVAL_SCOPE", config)
-    logger.info(f"Role approval scope updated for {len(config)} roles")
+    
+    # Persist to JSON file
+    try:
+        config_file = os.path.join(os.path.dirname(__file__), "role_approval_scope.json")
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        logger.info(f"Role approval scope updated and saved to {config_file} for {len(config)} roles")
+    except Exception as e:
+        logger.error(f"Failed to save role approval scope to file: {e}")
+        # Still update cache even if file save fails
+        logger.info(f"Role approval scope updated in cache for {len(config)} roles")

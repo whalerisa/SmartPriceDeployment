@@ -280,12 +280,17 @@ async def manual_login(req: ManualLoginRequest, response: Response):
     region = get_region_from_branch(req.branchId)
     
     # แปลง Thai role name เป็น internal role code
-    from role_mapping import map_thai_role_to_code
+    from role_mapping import map_thai_role_to_code, load_custom_roles
+    
+    # Debug: แสดง custom roles ที่โหลดได้
+    custom_roles = load_custom_roles()
+    print(f"🔍 [MANUAL_LOGIN] Custom roles loaded: {list(custom_roles.keys())}")
+    
     role_code = map_thai_role_to_code(req.role)
     
     print(f"🔍 [MANUAL_LOGIN] Mapping role:")
-    print(f"   Selected role (Thai): {req.role}")
-    print(f"   Mapped role (Code): {role_code}")
+    print(f"   Selected role (input): {req.role}")
+    print(f"   Mapped role (output): {role_code}")
     
     # สร้าง token payload
     token_payload = {

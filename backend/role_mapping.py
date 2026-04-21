@@ -23,6 +23,8 @@ Role Mappings:
 """
 
 import logging
+import os
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,24 @@ def is_pm_role(role_code: str) -> bool:
     return role_code == "PM" or role_code.startswith("PM_")
 
 
+def load_custom_roles() -> dict:
+    """
+    Load custom roles from JSON file.
+    
+    Returns:
+        Dictionary of custom roles: {role_code: {thai_name, display_name}}
+    """
+    try:
+        custom_roles_file = os.path.join(os.path.dirname(__file__), "custom_roles.json")
+        if os.path.exists(custom_roles_file):
+            with open(custom_roles_file, "r", encoding="utf-8") as f:
+                custom_roles = json.load(f)
+            return custom_roles
+    except Exception as e:
+        logger.error(f"Failed to load custom roles from file: {e}")
+    return {}
+
+
 def map_thai_role_to_code(thai_role_name: str) -> str:
     """
     Map Thai role name from auth_token to internal role code.
@@ -95,22 +115,32 @@ def map_thai_role_to_code(thai_role_name: str) -> str:
         logger.warning("Empty thai_role_name provided, returning default role 'Sales'")
         return DEFAULT_ROLE
     
-    # Check if it's already a valid English role code
-    if thai_role_name in VALID_ROLE_CODES:
+    # Check if it's already a valid English role code (including custom roles)
+    all_valid_codes = set(VALID_ROLE_CODES)
+    custom_roles = load_custom_roles()
+    all_valid_codes.update(custom_roles.keys())
+    
+    if thai_role_name in all_valid_codes:
         logger.info(f"Role '{thai_role_name}' is already a valid role code")
         return thai_role_name
     
-    # Try exact match for Thai role name
+    # Try exact match for Thai role name in built-in mappings
     role_code = THAI_ROLE_TO_CODE.get(thai_role_name)
     
     if role_code:
         logger.info(f"Mapped Thai role '{thai_role_name}' to code '{role_code}'")
         return role_code
-    else:
-        logger.warning(
-            f"Unknown Thai role name '{thai_role_name}', returning default role '{DEFAULT_ROLE}'"
-        )
-        return DEFAULT_ROLE
+    
+    # Try to find in custom roles Thai name mappings
+    for code, info in custom_roles.items():
+        if info.get("thai_name") == thai_role_name:
+            logger.info(f"Mapped custom Thai role '{thai_role_name}' to code '{code}'")
+            return code
+    
+    logger.warning(
+        f"Unknown Thai role name '{thai_role_name}', returning default role '{DEFAULT_ROLE}'"
+    )
+    return DEFAULT_ROLE
 
 
 def get_role_display_name(role_code: str) -> str:
@@ -172,9 +202,19 @@ def is_valid_role_code(role_code: str) -> bool:
 
 def get_all_role_codes() -> list:
     """
-    Get list of all valid role codes.
+    Get list of all valid role codes including custom roles.
     
     Returns:
         List of all internal role codes
     """
-    return list(VALID_ROLE_CODES)
+    # Start with built-in roles
+    all_roles = list(VALID_ROLE_CODES)
+    
+    # Add custom roles from JSON file
+    try:
+        custom_roles = load_custom_roles()
+        all_roles.extend(custom_roles.keys())
+    except Exception as e:
+        logger.warning(f"Failed to load custom roles: {e}")
+    
+    return sorted(list(set(all_roles)))  # Remove duplicates and sort

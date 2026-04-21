@@ -77,6 +77,7 @@ class SystemConfig(BaseModel):
     timezone: str = "Asia/Bangkok"
     language: str = "th"
     version: str = "1.0.0"
+    vat_rate: float = 0.07  # ⭐ VAT rate (default 7%)
 
 
 class ConfigResponse(BaseModel):
@@ -223,11 +224,18 @@ async def get_config(employee: dict = Depends(get_current_employee)):
         )
         
         # System Configuration
+        vat_rate_str = os.getenv("VAT_RATE", "0.07")
+        try:
+            vat_rate = float(vat_rate_str)
+        except:
+            vat_rate = 0.07
+        
         system_config = SystemConfig(
             base_url=BASE_URL,
             timezone=os.getenv("TIMEZONE", "Asia/Bangkok"),
             language=os.getenv("LANGUAGE", "th"),
-            version=os.getenv("APP_VERSION", "1.0.0")
+            version=os.getenv("APP_VERSION", "1.0.0"),
+            vat_rate=vat_rate
         )
         
         return ConfigResponse(
@@ -391,6 +399,8 @@ async def update_config(
                 os.environ["TIMEZONE"] = sys_cfg["timezone"]
             if "language" in sys_cfg:
                 os.environ["LANGUAGE"] = sys_cfg["language"]
+            if "vat_rate" in sys_cfg:
+                os.environ["VAT_RATE"] = str(sys_cfg["vat_rate"])
         
         logger.info(f"Config updated by {employee.get('employee_id')}")
         
@@ -444,17 +454,36 @@ async def create_role(
         if not role_code or not role_name_thai:
             raise HTTPException(status_code=400, detail="role_code and role_name_thai are required")
         
-        # Store in environment (for production, use database)
+        # Load existing custom roles from JSON file
         import json
-        custom_roles_str = os.getenv("CUSTOM_ROLES", "{}")
-        custom_roles = json.loads(custom_roles_str)
+        custom_roles_file = os.path.join(os.path.dirname(__file__), "custom_roles.json")
         
+        try:
+            with open(custom_roles_file, "r", encoding="utf-8") as f:
+                custom_roles = json.load(f)
+        except:
+            custom_roles = {}
+        
+        # Check if role already exists
+        from role_mapping import get_all_role_codes
+        existing_roles = get_all_role_codes()
+        if role_code in existing_roles:
+            raise HTTPException(status_code=400, detail=f"Role {role_code} already exists")
+        
+        # Add new role
         custom_roles[role_code] = {
             "thai_name": role_name_thai,
             "display_name": role_display_name or role_code
         }
         
-        os.environ["CUSTOM_ROLES"] = json.dumps(custom_roles)
+        # Save to JSON file
+        try:
+            with open(custom_roles_file, "w", encoding="utf-8") as f:
+                json.dump(custom_roles, f, ensure_ascii=False, indent=2)
+            logger.info(f"Saved custom roles to {custom_roles_file}")
+        except Exception as e:
+            logger.error(f"Failed to save custom roles to file: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save role: {e}")
         
         logger.info(f"Role {role_code} created by {employee.get('employee_id')}")
         
@@ -464,8 +493,75 @@ async def create_role(
             "role_code": role_code
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating role: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/roles/{role_code}", response_model=dict)
+async def delete_role(
+    role_code: str,
+    employee: dict = Depends(get_current_employee)
+):
+    """
+    Delete a custom role from the system.
+    Only accessible to admin users.
+    Cannot delete built-in roles.
+    """
+    if not check_admin_role(employee):
+        raise HTTPException(status_code=403, detail="Only admin can delete roles")
+    
+    try:
+        # Load existing custom roles from JSON file
+        import json
+        custom_roles_file = os.path.join(os.path.dirname(__file__), "custom_roles.json")
+        
+        try:
+            with open(custom_roles_file, "r", encoding="utf-8") as f:
+                custom_roles = json.load(f)
+        except:
+            raise HTTPException(status_code=404, detail="No custom roles found")
+        
+        # Check if role exists in custom roles
+        if role_code not in custom_roles:
+            raise HTTPException(status_code=404, detail=f"Custom role {role_code} not found")
+        
+        # Remove role
+        del custom_roles[role_code]
+        
+        # Save to JSON file
+        try:
+            with open(custom_roles_file, "w", encoding="utf-8") as f:
+                json.dump(custom_roles, f, ensure_ascii=False, indent=2)
+            logger.info(f"Saved custom roles to {custom_roles_file} after deleting {role_code}")
+        except Exception as e:
+            logger.error(f"Failed to save custom roles to file: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to delete role: {e}")
+        
+        # Also remove from page access config
+        from config_cache import get_page_access_config, set_page_access_config
+        page_access_config = get_page_access_config()
+        
+        for page_id, page_config in page_access_config.items():
+            if role_code in page_config.get("allowed_roles", []):
+                page_config["allowed_roles"].remove(role_code)
+        
+        set_page_access_config(page_access_config)
+        
+        logger.info(f"Role {role_code} deleted by {employee.get('employee_id')}")
+        
+        return {
+            "success": True,
+            "message": f"Role {role_code} deleted successfully",
+            "role_code": role_code
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting role: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

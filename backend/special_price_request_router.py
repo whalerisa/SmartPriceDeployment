@@ -1,7 +1,7 @@
 """Special Price Request Router"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from auth_dependency import get_employee_info
 from employee_position_mapper import (
@@ -12,6 +12,7 @@ from branch_region_mapping import get_region_from_branch
 from config.db_mssql import get_mssql_conn
 import logging
 import os
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,88 @@ class RejectionRequest(BaseModel):
 
 # === HELPER FUNCTIONS ===
 
+async def get_config_settings() -> Dict[str, Any]:
+    """Get config settings from database"""
+    try:
+        conn = get_mssql_conn()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT config_value FROM system_config
+            WHERE config_key = 'price_approval_config'
+        """)
+        
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        
+        if row:
+            config_str = row[0]
+            return json.loads(config_str)
+        else:
+            # Return default config if not found
+            logger.warning("Config not found in database, using default values")
+            return get_default_config()
+    except Exception as e:
+        logger.error(f"Error getting config: {e}")
+        return get_default_config()
+
+
+def get_default_config() -> Dict[str, Any]:
+    """Get default config (fallback)"""
+    return {
+        "price_config": {
+            "role_approval_scope": {
+                "Sales": {"min_level": "R1"},
+                "ZM": {"min_level": "R1", "max_level": "W2"},
+                "RM": {"min_level": "W2", "max_level": "W1"},
+                "SDM": {"min_level": "W1", "max_level": "SDM"},
+                "PM": {"min_level": "SDM"}
+            }
+        }
+    }
+
+
+def price_level_order() -> Dict[str, int]:
+    """Get price level order (higher number = higher price)"""
+    return {
+        "R2": 5,
+        "R1": 4,
+        "W2": 3,
+        "W1": 2,
+        "SDM": 1
+    }
+
+
+def determine_approval_level(
+    requested_price: float,
+    r1_price: float,
+    w2_price: float,
+    w1_price: float,
+    sdm_price: float
+) -> Optional[str]:
+    """
+    Determine approval level based on requested price and price thresholds
+    
+    Returns:
+        - None: ไม่ต้องขออนุมัติ (ราคา >= R1)
+        - 'ZM_ONLY': ต้องอนุมัติจาก ZM เท่านั้น (R1 > ราคา >= W2)
+        - 'ZM_THEN_RM': ต้องผ่าน ZM และ RM (W2 > ราคา >= W1)
+        - 'SDM_APPROVAL': ต้องผ่าน ZM, RM และ SDM (W1 > ราคา >= SDM)
+        - 'PM_APPROVAL': ต้องผ่าน ZM, RM, SDM และ PM (ราคา < SDM)
+    """
+    if requested_price >= r1_price:
+        return None  # ไม่ต้องขออนุมัติ
+    elif requested_price >= w2_price:
+        return 'ZM_ONLY'
+    elif requested_price >= w1_price:
+        return 'ZM_THEN_RM'
+    elif requested_price >= sdm_price:
+        return 'SDM_APPROVAL'
+    else:
+        return 'PM_APPROVAL'
+
+
 def extract_product_categories(items: List[SpecialPriceItem]) -> set:
     """Extract unique product categories from items based on SKU first letter"""
     categories = set()
@@ -62,9 +145,10 @@ def calculate_request_total(items: List[SpecialPriceItem]) -> float:
     return sum(float(item.requested_price) * float(item.quantity) for item in items)
 
 
-def is_price_below_sdm(requested_total: float) -> bool:
+def is_price_below_sdm(requested_total: float, sdm_threshold: Optional[float] = None) -> bool:
     """Check if requested total is below SDM threshold"""
-    sdm_threshold = float(os.getenv("SDM_THRESHOLD_PRICE", "50000"))
+    if sdm_threshold is None:
+        sdm_threshold = float(os.getenv("SDM_THRESHOLD_PRICE", "50000"))
     return requested_total < sdm_threshold
 
 
@@ -631,6 +715,10 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
         logger.info(f"  Approver: {current_employee_id} ({current_name})")
         logger.info(f"  Role: {current_role}")
         logger.info(f"  Branch: {current_branch}")
+        
+        # ⭐ Load config
+        config = await get_config_settings()
+        logger.info(f"  Config loaded: {config}")
         
         conn = get_mssql_conn()
         cursor = conn.cursor()

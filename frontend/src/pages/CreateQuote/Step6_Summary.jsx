@@ -115,6 +115,26 @@ function Step6_Summary({ state, dispatch }) {
   const [specialPriceRequest, setSpecialPriceRequest] = useState(null);
   const [loadingSPR, setLoadingSPR] = useState(false);
   
+  // ⭐ VAT Rate state
+  const [vatRate, setVatRate] = useState(0.07);
+  
+  // Load VAT rate from config
+  useEffect(() => {
+    const loadVatRate = async () => {
+      try {
+        const response = await api.get("/api/config/settings");
+        const rate = response.data?.system_config?.vat_rate || 0.07;
+        setVatRate(rate);
+        console.log('[VAT] Loaded VAT rate:', rate);
+      } catch (err) {
+        console.log('[VAT] Failed to load VAT rate, using default 0.07');
+        setVatRate(0.07);
+      }
+    };
+    
+    loadVatRate();
+  }, []);
+  
   // Load special price request when quote is loaded
   useEffect(() => {
     const loadSpecialPriceRequest = async () => {
@@ -531,7 +551,7 @@ function Step6_Summary({ state, dispatch }) {
 
             const subtotalGross = sumLine(state.cart);
             const grossBeforeVat = subtotalGross + shipping;
-            const vat = Math.round(grossBeforeVat * 0.07 * 100) / 100;
+            const vat = Math.round(grossBeforeVat * vatRate * 100) / 100;
             const exVat = grossBeforeVat - vat;
             const total = grossBeforeVat;
 
@@ -658,7 +678,7 @@ function Step6_Summary({ state, dispatch }) {
 
           const subtotalGross = sumLine(state.cart);
           const grossBeforeVat = subtotalGross + shipping;
-          const vat = Math.round(grossBeforeVat * 0.07 * 100) / 100;
+          const vat = Math.round(grossBeforeVat * vatRate * 100) / 100;
           const exVat = grossBeforeVat - vat;
           const total = grossBeforeVat;
 
@@ -1364,7 +1384,7 @@ function Step6_Summary({ state, dispatch }) {
     }, 0);
 
     const grossBeforeVat = Number(subtotal) + shipping;
-    const vat = _round2(grossBeforeVat * 0.07);
+    const vat = _round2(grossBeforeVat * vatRate);
     const exVat = _round2(grossBeforeVat - vat);
     const total = _round2(grossBeforeVat);
 
@@ -2887,7 +2907,7 @@ function Step6_Summary({ state, dispatch }) {
                   loading={calculation.loading}
                 />
                 <SummaryRow
-                  label="ภาษีมูลค่าเพิ่ม (7%)"
+                  label={`ภาษีมูลค่าเพิ่ม (${(vatRate * 100).toFixed(1)}%)`}
                   value={calculation.totals.vatFmt || "..."}
                   loading={calculation.loading}
                 />

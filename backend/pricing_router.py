@@ -105,6 +105,19 @@ def calculate_tax_invoice_surcharge(item_count: int) -> float:
     
     return rounded
 
+
+def get_vat_rate() -> float:
+    """
+    ⭐ Get VAT rate from config (default 0.07 = 7%)
+    """
+    import os
+    try:
+        vat_rate_str = os.getenv("VAT_RATE", "0.07")
+        vat_rate = float(vat_rate_str)
+        return vat_rate
+    except:
+        return 0.07
+
 # -------------------------------
 #  MAIN ENDPOINT
 # -------------------------------
@@ -472,7 +485,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             subtotal_gross = float(df_calc["LineTotal"].sum())
             gross_before_vat = subtotal_gross + shipping_customer_pay
 
-        subtotal = float(round(gross_before_vat / 1.07, 2))
+        subtotal = float(round(gross_before_vat / (1 + get_vat_rate()), 2))
         vat = float(round(gross_before_vat - subtotal, 2))
 
         product_total = gross_before_vat
@@ -1000,7 +1013,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     gross_before_vat = subtotal_gross + shipping_customer_pay
 
     # 👉 คิด VAT จากยอดรวม
-    subtotal = float(round(gross_before_vat / 1.07, 2))
+    subtotal = float(round(gross_before_vat / (1 + get_vat_rate()), 2))
     vat = float(round(gross_before_vat - subtotal, 2))
 
     # 👉 ยอดสุทธิ

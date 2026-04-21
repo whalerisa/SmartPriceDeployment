@@ -142,7 +142,8 @@ def get_employee_info(request: Request, authorization: str = Header(None)) -> di
         
         logger.info(
             f"[JWT] Extracted: employee_id={employee_id}, name={name}, "
-            f"branch={branch_code}, role={role_internal}, region={region}"
+            f"branch={branch_code}, role={role_internal}, region={region}, "
+            f"thai_role_name={thai_role_name}"
         )
         
         return employee_info

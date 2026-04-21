@@ -1,0 +1,54 @@
+{
+  "create_quote": {
+    "page_name": "create_quote",
+    "page_label": "สร้างใบเสนอราคา",
+    "allowed_roles": [
+      "Sales",
+      "Sales_Project",
+      "ZM",
+      "PM",
+      "Admin",
+      "RM",
+      "PM_ALUMINIUM",
+      "PM_CLINE",
+      "PM_EQUIPMENT",
+      "PM_GLASS",
+      "PM_GYPSUM",
+      "PM_SEALANT"
+    ]
+  },
+  "project_price": {
+    "page_name": "project_price",
+    "page_label": "สร้างรหัสโครงการ",
+    "allowed_roles": [
+      "Admin",
+      "ZM",
+      "Sales_Project"
+    ]
+  },
+  "special_price_approval": {
+    "page_name": "special_price_approval",
+    "page_label": "หน้าอนุมัติราคา",
+    "allowed_roles": [
+      "ZM",
+      "RM",
+      "SDM",
+      "PM",
+      "Admin",
+      "PM_ALUMINIUM",
+      "PM_CLINE",
+      "PM_EQUIPMENT",
+      "PM_GLASS",
+      "PM_GYPSUM",
+      "PM_SEALANT"
+    ]
+  },
+  "update_price": {
+    "page_name": "update_price",
+    "page_label": "เพิ่มราคา",
+    "allowed_roles": [
+      "PM",
+      "Admin"
+    ]
+  }
+}
