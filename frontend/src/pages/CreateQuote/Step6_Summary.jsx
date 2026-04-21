@@ -299,6 +299,14 @@ function Step6_Summary({ state, dispatch }) {
         });
       });
 
+      console.log('🔍 [DRAFT] Quote object:', {
+        project_code: quote.project_code,
+        ProjectCode: quote.ProjectCode,
+        all_keys: Object.keys(quote),
+        customer: quote.customer,
+        deliveryType: quote.deliveryType,
+      });
+
       dispatch({
         type: "LOAD_DRAFT",
         payload: {
@@ -315,6 +323,8 @@ function Step6_Summary({ state, dispatch }) {
 
           deliveryType: quote.deliveryType ?? "PICKUP",
           note: quote.note ?? "",
+          expireDate: quote.expireDate || null,
+          project_code: quote.project_code || null,  // ⭐ เพิ่ม project_code
 
           cart: (quote.cart || []).map((it) => ({
             ...it,
@@ -360,6 +370,7 @@ function Step6_Summary({ state, dispatch }) {
 
           deliveryType: order.deliveryType ?? "PICKUP",
           note: order.note ?? "",
+          expireDate: order.expireDate || null,
 
           cart: (order.cart || []).map((it) => ({
             ...it,
@@ -922,15 +933,35 @@ function Step6_Summary({ state, dispatch }) {
         
         const projects = res.data || [];
         console.log('📦 Found projects:', projects);
+        console.log('🔍 state.project_code:', state.project_code);
         setCustomerProjects(projects);
+        
+        // ⭐ ถ้ามี project_code ใน state (จาก draft) ให้ set selectedProject
+        if (state.project_code && projects.length > 0) {
+          const matchedProject = projects.find(p => p.project_code === state.project_code);
+          console.log('🔍 Matched project:', matchedProject);
+          if (matchedProject) {
+            console.log('✅ Auto-selecting project from draft:', matchedProject.project_code, 'ID:', matchedProject.project_id);
+            setSelectedProject(matchedProject.project_id);
+          } else {
+            console.log('⚠️ No matching project found for code:', state.project_code);
+          }
+        } else {
+          console.log('ℹ️ No project_code in state or no projects available');
+          // ⭐ ถ้าไม่มี project_code ใน state ให้ clear selectedProject
+          if (!state.project_code) {
+            setSelectedProject(null);
+          }
+        }
       } catch (err) {
         console.error('❌ Error loading projects:', err);
         setCustomerProjects([]);
+        setSelectedProject(null);
       }
     };
 
     fetchProjects();
-  }, [state.customer]);
+  }, [state.customer, state.project_code]);  // ⭐ เพิ่ม state.project_code เป็น dependency
 
   // โหลดราคาโครงการเมื่อเลือกโครงการ และคำนวณราคาใหม่
   const prevProjectRef = React.useRef(selectedProject);
@@ -1745,6 +1776,7 @@ function Step6_Summary({ state, dispatch }) {
       pre_order: isPreOrder ? 1 : 0, // ⭐ เพิ่ม pre_order field
       required_delivery_date: isPreOrder && requiredDeliveryDate ? requiredDeliveryDate : null, // ⭐ เพิ่ม required_delivery_date field
       project_code: selectedProject ? customerProjects.find(p => p.project_id === selectedProject)?.project_code : null, // ⭐ เพิ่ม project_code field
+      expireDate: state.expireDate || null, // ⭐ เพิ่ม expireDate field
     };
   };
 
@@ -2261,6 +2293,7 @@ function Step6_Summary({ state, dispatch }) {
       date: new Date().toLocaleDateString("th-TH"),
       sales: employee?.name || "",
       salesId: employee?.id || "",  // ⭐ เพิ่ม salesId เพื่อให้ backend ดึงชื่อพนักงานได้
+      projectCode: selectedProject ? customerProjects.find(p => p.project_id === selectedProject)?.project_code : null,  // ⭐ ดึง project_code จาก selectedProject
       customer: {
         code: state.customer?.id || state.customer?.code || "",
         name: state.customer?.name || "ผู้ไม่ประสงค์ออกนาม",

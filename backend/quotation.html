@@ -6,7 +6,7 @@
 <style>
 @page {
   size: A4;
-  margin: 15mm;
+  margin: 15mm 10mm;  /* บน-ล่าง 15mm, ซ้าย-ขวา 10mm */
 }
 
 @font-face {
@@ -22,13 +22,12 @@ body {
 /* ===== Layout หลักทั้งหน้า ===== */
 .page {
   position: relative;
-  min-height: calc(297mm - 30mm);
-  display: flex;
-  flex-direction: column;
+  height: 267mm;  /* A4 height - margins */
 }
 
 .content-wrapper {
-  flex: 1;
+  position: relative;
+  height: 100%;
 }
 
 /* ===== Page Break สำหรับรายการสินค้า ===== */
@@ -41,9 +40,6 @@ body {
   page-break-inside: avoid;
 }
 
-.summary-section {
-  margin-top: 20px;
-}
 .center { text-align: center; }
 .right { text-align: right; }
 
@@ -74,12 +70,14 @@ body {
 
 /* ===== ส่วนล่างของเอกสาร ===== */
 .summary-section {
-  margin-top: auto;
-  page-break-inside: avoid;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
 }
 
 .signature {
-  margin-top: 80px;
+  margin-top: 20px;
   display: flex;
   justify-content: space-between;
 }
@@ -94,7 +92,6 @@ body {
   border-collapse: collapse;
   margin-top: 12px;
   table-layout: fixed; /* 🔥 key */
-  margin-bottom: 20px;
 }
 
 .items-table th,
@@ -110,30 +107,35 @@ body {
 }
 
 .items-table .sku {
-  width: 20%;
+  width: 22%;
   word-break: break-all;   /* 🔥 SKU ไม่ชนอีก */
 }
 
 .items-table .name {
-  width: 22%;
+  width: 30%;
   word-break: break-word;
 }
 
 .items-table .qty {
-  width: 7%;         /* จำนวน */
-  margin-left: 4%;
+  width: 8%;         /* จำนวน */
+  margin-left: 6%;
+  text-align: right;
 }
 
 .items-table .unit {
-  width: 6%;         /* หน่วย */
+  width: 4%;         /* หน่วย */
+  text-align: center;
 }
 
 .items-table .price {
   width: 14%;        /* ราคาต่อหน่วย */
+  margin-left: 6%;
+  text-align: right;
 }
 
 .items-table .amount {
   width: 14%;        /* จำนวนเงิน */
+  text-align: right;
 }
 
 .items-table .right {
@@ -172,7 +174,7 @@ body {
 </div>
 
 <div class="center" style="margin-top:10px;font-weight:bold;">
-  Sales Quote / ใบเสนอราคา
+  Sales Quote / ใบเสนอราคา (ร่าง)
 </div>
 
 <div class="section row">
@@ -182,9 +184,10 @@ body {
     เบอร์โทร : {{ q.customer.phone }}
   </div>
   <div class="col">
-    เลขที่เอกสาร : {{ q.quoteNo }}<br>
+    เลขที่เอกสาร : {{ q.quoteNo }} (SP) <br>
+    รหัสโครงการ : {{ q.projectCode }}<br>
     วันที่ : {{ q.date }}<br>
-    พนักงานขาย : {{ q.sales }}
+    พนักงานขาย : {{ q.sales }}<br>
   </div>
 </div>
 
@@ -224,6 +227,7 @@ body {
   </table>
   
   {% if page_num < total_pages - 1 %}
+  
   </div>
   </div>
   
@@ -254,17 +258,17 @@ body {
     <div class="col">
       เลขที่เอกสาร : {{ q.quoteNo }}<br>
       วันที่ : {{ q.date }}<br>
-      พนักงานขาย : {{ q.sales }}
+      พนักงานขาย : {{ q.sales }}<br>
+      {% if q.projectCode %}
+      <strong>รหัสโครงการ : {{ q.projectCode }}</strong>
+      {% endif %}
     </div>
   </div>
   {% endif %}
   
 {% endfor %}
 
-</div>
-
-
-<!-- ===== SUMMARY + SIGNATURE (FIX ล่างกระดาษ) ===== -->
+<!-- ===== SUMMARY + SIGNATURE ===== -->
 <div class="summary-section">
 
   <div class="section row summary-row">

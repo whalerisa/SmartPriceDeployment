@@ -1,20 +1,55 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, Check, X, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
 import { formatDateThai } from '../utils/dateFormatter';
 
 export default function SpecialPriceApproval() {
-  const [requests, setRequests] = useState([]);
+  const { employee } = useAuth();
+  const navigate = useNavigate();
+  const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState([]);
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [actionType, setActionType] = useState(null); // 'approve' or 'reject'
   const [rejectionReason, setRejectionReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
 
+  // ⭐ ตรวจสอบสิทธิ์จาก API
   useEffect(() => {
-    fetchPendingRequests();
-  }, []);
+    const checkAccess = async () => {
+      try {
+        const res = await api.get("/api/config/page-access/check/special_price_approval");
+        setHasAccess(res.data.has_access);
+        console.log("🔐 Special Price Approval access check:", res.data);
+      } catch (err) {
+        console.error("Failed to check page access:", err);
+        setHasAccess(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (employee) {
+      checkAccess();
+    }
+  }, [employee]);
+
+  // ตรวจสอบสิทธิ์เข้าถึง
+  useEffect(() => {
+    if (!loading && employee && !hasAccess) {
+      // ถ้าไม่มีสิทธิ์ ให้กลับไปที่ Dashboard
+      navigate("/dashboard", { replace: true });
+    }
+  }, [loading, employee, hasAccess, navigate]);
+
+  useEffect(() => {
+    if (hasAccess) {
+      fetchPendingRequests();
+    }
+  }, [hasAccess]);
 
   const fetchPendingRequests = async () => {
     try {
@@ -151,7 +186,19 @@ export default function SpecialPriceApproval() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">กำลังโหลด...</p>
+          <p className="text-gray-600">กำลังตรวจสอบสิทธิ์...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ถ้าไม่มีสิทธิ์ ให้แสดงข้อความ
+  if (employee && !hasAccess) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center max-w-md">
+          <h2 className="text-xl font-bold text-red-800 mb-2">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-red-600">ขออภัย คุณไม่มีสิทธิ์เข้าถึงหน้านี้</p>
         </div>
       </div>
     );

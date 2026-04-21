@@ -117,6 +117,8 @@ export default function QuoteDraftListPage() {
         billTaxName: h.BillTaxName,
         note: h.Remark,
         needTaxInvoice: h.NeedsTax === "Y",
+        expireDate: h.ExpireDate || null,
+        project_code: h.project_code || h.ProjectCode || null,  // ⭐ เพิ่ม project_code
 
         cart,
 

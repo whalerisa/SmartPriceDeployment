@@ -14,6 +14,7 @@ import CustomerDetail from "./pages/CustomerDetail.jsx";
 import CustomerSearch from "./pages/CustomerSearch.jsx";
 import PromotionManagement from "./pages/PromotionManagement.jsx";
 import SpecialPriceApproval from "./pages/SpecialPriceApproval.jsx";
+import AdminConfig from "./pages/AdminConfig.jsx";
 import Login from "./pages/Login.jsx";
 
 // --- Layout 1 (สำหรับ Dashboard) ---
@@ -48,6 +49,7 @@ function App() {
         <Route element={<DashboardLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/admin-config" element={<AdminConfig />} />
           <Route path="/update-price" element={<UpdatePrice />} />
           <Route path="/project-price" element={<ProjectPrice />} />
           <Route path="/quote-drafts" element={<QuoteDraftListPage />} />

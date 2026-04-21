@@ -5,45 +5,50 @@ import { useAuth } from "../hooks/useAuth.js";
 import api from "../services/api.js";
 import ProjectPriceManagement from "./ProjectPriceManagement";
 
-// รหัสพนักงานที่มีสิทธิ์เข้าถึงหน้า "ราคาโครงการ" (fallback)
-const ALLOWED_PROJECT_PRICE_EMPLOYEES = ['90038', '20061', '11186', '21702', '21367', '20614', '20194', '20785', '20093', '20686', '16647', '20595', '20091', '16053', '16654', '16725', '10011', '20040', '10254', '16646', '16702', '20037', '16723', '20974', '20129', '10073', '20084', '21094', '20813'];
-
 export default function ProjectPrice() {
   const { employee } = useAuth();
   const navigate = useNavigate();
-  const [allowedEmployees, setAllowedEmployees] = useState(ALLOWED_PROJECT_PRICE_EMPLOYEES);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // โหลดสิทธิ์พนักงานจาก backend
+  // ⭐ ตรวจสอบสิทธิ์จาก API
   useEffect(() => {
-    const fetchEmployeeAccess = async () => {
+    const checkAccess = async () => {
       try {
-        const res = await api.get("/api/admin/employee-access");
-        setAllowedEmployees(res.data.allowed_project_price_employees);
+        const res = await api.get("/api/config/page-access/check/project_price");
+        setHasAccess(res.data.has_access);
+        console.log("🔐 Project Price access check:", res.data);
       } catch (err) {
-        console.error("Failed to fetch employee access:", err);
+        console.error("Failed to check page access:", err);
+        setHasAccess(false);
+      } finally {
+        setLoading(false);
       }
     };
-    fetchEmployeeAccess();
-  }, []);
-
-  // ⭐ ตรวจสอบสิทธิ์จาก role หรือรายชื่อพนักงาน
-  // Role ที่มีสิทธิ์: ZM, RM, SDM, Sales_Project, PM (ทั้งหมด)
-  const isPM = employee?.role && typeof employee.role === "string" && (
-    employee.role === "PM" || employee.role.startsWith("PM_")
-  );
-  const hasRoleAccess = ["ZM", "RM", "SDM", "Sales_Project"].includes(employee?.role) || isPM;
-  const hasEmployeeIdAccess = employee && allowedEmployees.includes(employee.id);
-  const hasAccess = hasRoleAccess || hasEmployeeIdAccess;
+    
+    if (employee) {
+      checkAccess();
+    }
+  }, [employee]);
 
   // ตรวจสอบสิทธิ์เข้าถึง
   useEffect(() => {
-    if (employee && !hasAccess) {
-      // ถ้าไม่ใช่พนักงานที่อนุญาต ให้กลับไปที่ Dashboard
+    if (!loading && employee && !hasAccess) {
+      // ถ้าไม่มีสิทธิ์ ให้กลับไปที่ Dashboard
       navigate("/dashboard", { replace: true });
     }
-  }, [employee, hasAccess, navigate]);
+  }, [loading, employee, hasAccess, navigate]);
 
-  // ถ้าไม่ใช่พนักงานที่อนุญาต ให้แสดงข้อความ
+  // แสดง loading
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-xl">กำลังตรวจสอบสิทธิ์...</div>
+      </div>
+    );
+  }
+
+  // ถ้าไม่มีสิทธิ์ ให้แสดงข้อความ
   if (employee && !hasAccess) {
     return (
       <div className="p-6">

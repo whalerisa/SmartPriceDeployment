@@ -21,6 +21,7 @@ from products_router import api_router
 from cache_refresh_router import router as cache_refresh_router
 from item_master_router import router as item_master_router
 from admin_router import router as admin_router
+from config_router import router as config_router
 from branch import router as branch_router
 from credit_router import router as credit_router
 from chrome_debug_router import router as chrome_debug_router
@@ -123,6 +124,7 @@ app.include_router(api_router, prefix="/api")
 app.include_router(cache_refresh_router)
 app.include_router(item_master_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(config_router, prefix="/api/config")
 app.include_router(branch_router)
 app.include_router(credit_router)
 app.include_router(chrome_debug_router)  # Chrome debug mode starter

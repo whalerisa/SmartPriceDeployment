@@ -81,6 +81,7 @@ export default function OrderDetailPage() {
         date: new Date(order.createdAt).toLocaleDateString("th-TH"),
         sales: order.sales || "",
         salesId: order.employee?.id || "",  // ⭐ เพิ่ม salesId เพื่อให้ backend ดึงชื่อพนักงานได้
+        projectCode: order.projectCode || null,  // ⭐ เพิ่ม projectCode
         customer: {
           code: order.customer?.id || "",
           name: order.customer?.name || "ผู้ไม่ประสงค์ออกนาม",
@@ -285,6 +286,8 @@ export default function OrderDetailPage() {
                     deliveryType: quote.deliveryType ?? "PICKUP",
                     billTaxName: quote.billTaxName ?? "",
                     note: quote.note ?? "",
+                    expireDate: quote.expireDate || null,
+                    project_code: quote.project_code || null,  // ⭐ เพิ่ม project_code
                     cart: (quote.cart || []).map((it) => ({
                       sku: it.sku,
                       name: it.name,
@@ -336,8 +339,10 @@ export default function OrderDetailPage() {
                       _needsHydrate: true,
                     },
                     deliveryType: order.deliveryType ?? "PICKUP",
+                    project_code: order.project_code || order.ProjectCode || null,  // ⭐ เพิ่ม project_code
                     billTaxName: order.billTaxName ?? "",
                     note: order.note ?? "",
+                    expireDate: order.expireDate || null,
                     cart: (order.cart || []).map((it) => ({
                       sku: it.sku,
                       name: it.name,

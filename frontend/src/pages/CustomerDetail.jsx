@@ -144,6 +144,8 @@ function CustomerDetail() {
           billTaxName: h.BillTaxName,
           note: h.Remark,
           needTaxInvoice: h.NeedsTax === "Y",
+          expireDate: h.ExpireDate || null,
+          project_code: h.project_code || h.ProjectCode || null,  // ⭐ เพิ่ม project_code
           cart,
           shippingCost: h.ShippingCost ?? 0,
           shippingCustomerPay: h.ShippingCustomerPay ?? 0,
@@ -179,6 +181,7 @@ function CustomerDetail() {
         date: new Date(h.CreateDate).toLocaleDateString("th-TH"),
         sales: h.SalesName || "",
         salesId: h.SalesID || "",  // ⭐ เพิ่ม salesId เพื่อให้ backend ดึงชื่อพนักงานได้
+        projectCode: h.ProjectCode || null,  // ⭐ เพิ่ม projectCode
         customer: {
           code: h.CustomerCode || "",
           name: h.CustomerName || "ผู้ไม่ประสงค์ออกนาม",

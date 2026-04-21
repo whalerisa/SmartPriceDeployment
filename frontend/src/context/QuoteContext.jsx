@@ -30,6 +30,7 @@ const initialState = {
   remark: "",
   status: "new",
   quoteNo: null,
+  expireDate: null,
 };
 
 function quoteReducer(state, action) {
@@ -557,6 +558,8 @@ function quoteReducer(state, action) {
           shippingRaw: action.payload.totals?.shippingRaw ?? 0,
           shippingCustomerPay: action.payload.totals?.shippingCustomerPay ?? 0,
         },
+        expireDate: action.payload.expireDate || null,
+        project_code: action.payload.project_code || null,  // ⭐ เพิ่ม project_code
       };
 
     case "UPDATE_ITEM_DESCRIPTION": {

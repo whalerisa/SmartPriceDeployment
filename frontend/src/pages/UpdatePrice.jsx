@@ -7,35 +7,40 @@ import UploadPriceExcel from "../components/updatePrice/UploadPriceExcel";
 import PromotionManagement from "./PromotionManagement";
 import ProductImageManager from "../components/productImage/ProductImageManager";
 
-// รหัสพนักงานที่มีสิทธิ์เข้าถึงหน้า "เพิ่ม/อัปเดตราคา"
-const ALLOWED_PRICE_UPDATE_EMPLOYEES = ['90038', '20061', '11186', '21702', '21367', '20614', '20194', '20785', '20093', '20686', '16647', '20595', '20091', '16053', '16654', '16725', '10011', '20040', '10254', '16646', '16702', '20037', '16723', '20974', '20129', '10073', '20084', '21094', '20813'];
-
 export default function UpdatePrice() {
   const { employee } = useAuth();
   const navigate = useNavigate();
-  const [allowedEmployees, setAllowedEmployees] = useState(ALLOWED_PRICE_UPDATE_EMPLOYEES);
+  const [hasAccess, setHasAccess] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [uploadResult, setUploadResult] = useState(null);
   const [activeTab, setActiveTab] = useState("price"); // "price" | "promotion" | "image"
 
-  // ตรวจสอบสิทธิ์เข้าถึง
+  // ⭐ ตรวจสอบสิทธิ์จาก API
   useEffect(() => {
-    const fetchEmployeeAccess = async () => {
+    const checkAccess = async () => {
       try {
-        const res = await api.get("/api/admin/employee-access");
-        setAllowedEmployees(res.data.allowed_price_update_employees);
+        const res = await api.get("/api/config/page-access/check/update_price");
+        setHasAccess(res.data.has_access);
+        console.log("🔐 Update Price access check:", res.data);
       } catch (err) {
-        console.error("Failed to fetch employee access:", err);
+        console.error("Failed to check page access:", err);
+        setHasAccess(false);
+      } finally {
+        setLoading(false);
       }
     };
-    fetchEmployeeAccess();
-  }, []);
+    
+    if (employee) {
+      checkAccess();
+    }
+  }, [employee]);
 
   useEffect(() => {
-    if (employee && !allowedEmployees.includes(employee.id)) {
-      // ถ้าไม่ใช่พนักงานที่อนุญาต ให้กลับไปที่ Dashboard
+    if (!loading && employee && !hasAccess) {
+      // ถ้าไม่มีสิทธิ์ ให้กลับไปที่ Dashboard
       navigate("/dashboard", { replace: true });
     }
-  }, [employee, allowedEmployees, navigate]);
+  }, [loading, employee, hasAccess, navigate]);
 
   const handleUploadComplete = (result) => {
     setUploadResult(result);
@@ -43,8 +48,17 @@ export default function UpdatePrice() {
     setTimeout(() => setUploadResult(null), 5000);
   };
 
-  // ถ้าไม่ใช่พนักงานที่อนุญาต ให้แสดงข้อความ
-  if (employee && !allowedEmployees.includes(employee.id)) {
+  // แสดง loading
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-xl">กำลังตรวจสอบสิทธิ์...</div>
+      </div>
+    );
+  }
+
+  // ถ้าไม่มีสิทธิ์ ให้แสดงข้อความ
+  if (employee && !hasAccess) {
     return (
       <div className="p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">

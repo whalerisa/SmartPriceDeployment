@@ -647,6 +647,8 @@ const ProjectPriceManagement = () => {
       
       const payload = {
         ...formData,
+        // ⭐ ถ้าเป็นโหมดลูกค้าพิเศษ ไม่ต้องส่ง project_name (ส่งเป็น empty string)
+        project_name: priceMode === 'customer' ? '' : formData.project_name,
         // ✅ เพิ่ม employee code
         created_by_employee_code: employee?.id,
         // ⭐ เพิ่ม price_mode flag
@@ -1223,7 +1225,7 @@ const ProjectPriceManagement = () => {
                   className="p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-100 transition"
                 >
                   <div className="font-semibold text-gray-800 hover:text-lg">โครงการ</div>
-                  <div className="text-xs text-gray-500 mt-1">ราคาโครงการ</div>
+                  <div className="text-xs text-gray-500 mt-1">รหัสโครงการ (พนักงานขาย Project)</div>
                 </button>
                 
                 <button
@@ -1232,7 +1234,7 @@ const ProjectPriceManagement = () => {
                   className="p-4 border-2 border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-100 transition"
                 >
                   <div className="font-semibold text-gray-800 hover:text-lg">สาขา</div>
-                  <div className="text-xs text-gray-500 mt-1">ราคาโครงการของสาขา</div>
+                  <div className="text-xs text-gray-500 mt-1">รหัสโครงการของสาขา</div>
                 </button>
                 
                 <button
@@ -1301,134 +1303,131 @@ const ProjectPriceManagement = () => {
                   />
                 </div>
               </div>
+            ) : priceMode === 'customer' ? (
+              // ฟอร์มสำหรับโหมดลูกค้าพิเศษ - ไม่มีชื่อโครงการ
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    รหัสลูกค้า <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.customer_code}
+                    onChange={(e) => {
+                      const code = e.target.value.toUpperCase();
+                      setFormData({...formData, customer_code: code});
+                      
+                      if (code.trim().length > 0) {
+                        fetchCustomerName(code.trim());
+                      } else {
+                        setFormData(prev => ({...prev, customer_name: ''}));
+                      }
+                    }}
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="เช่น 08015AY"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ชื่อลูกค้า
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.customer_name}
+                    readOnly
+                    className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700"
+                    placeholder="ชื่อลูกค้า (อัตโนมัติ)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    สาขา 
+                  </label>
+                  <select
+                    value={formData.branch_code}
+                    onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="">เลือกสาขา</option>
+                    {Array.isArray(branches) && branches.map(b => (
+                      <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  ชื่อโครงการ <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.project_name}
-                  onChange={(e) => setFormData({...formData, project_name: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="เช่น โครงการคอนโดXXX"
-                />
-              </div>
-            )}
-            
-            {/* Row 2: Customer Info & Branch */}
-            {(priceMode !== 'customer' || editingProjectId) && (
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  รหัสลูกค้า
-                </label>
-                <input
-                  type="text"
-                  value={formData.customer_code}
-                  onChange={(e) => {
-                    const code = e.target.value.toUpperCase();
-                    setFormData({...formData, customer_code: code});
-                    
-                    // Auto-fetch customer name when code is entered
-                    if (code.trim().length > 0) {
-                      fetchCustomerName(code.trim());
-                    } else {
-                      setFormData(prev => ({...prev, customer_name: ''}));
-                    }
-                  }}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="เช่น 08015AY"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  ชื่อลูกค้า
-                </label>
-                <input
-                  type="text"
-                  value={formData.customer_name}
-                  readOnly
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700"
-                  placeholder="ชื่อลูกค้า (อัตโนมัติ)"
-                />
-              </div>
+              // ฟอร์มสำหรับโหมดโครงการ/สาขา - มีชื่อโครงการ
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ชื่อโครงการ <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.project_name}
+                    onChange={(e) => setFormData({...formData, project_name: e.target.value})}
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="เช่น โครงการคอนโดXXX"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  สาขา 
-                </label>
-                <select
-                  value={formData.branch_code}
-                  onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                >
-                  <option value="">เลือกสาขา</option>
-                  {Array.isArray(branches) && branches.map(b => (
-                    <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            )}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      รหัสลูกค้า
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customer_code}
+                      onChange={(e) => {
+                        const code = e.target.value.toUpperCase();
+                        setFormData({...formData, customer_code: code});
+                        
+                        if (code.trim().length > 0) {
+                          fetchCustomerName(code.trim());
+                        } else {
+                          setFormData(prev => ({...prev, customer_name: ''}));
+                        }
+                      }}
+                      className="w-full border rounded-lg px-3 py-2"
+                      placeholder="เช่น 08015AY"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ชื่อลูกค้า
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customer_name}
+                      readOnly
+                      className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700"
+                      placeholder="ชื่อลูกค้า (อัตโนมัติ)"
+                    />
+                  </div>
 
-            {(priceMode === 'customer' && !editingProjectId) && (
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  รหัสลูกค้า 
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.customer_code}
-                  onChange={(e) => {
-                    const code = e.target.value.toUpperCase();
-                    setFormData({...formData, customer_code: code});
-                    
-                    // Auto-fetch customer name when code is entered
-                    if (code.trim().length > 0) {
-                      fetchCustomerName(code.trim());
-                    } else {
-                      setFormData(prev => ({...prev, customer_name: ''}));
-                    }
-                  }}
-                  className="w-full border rounded-lg px-3 py-2"
-                  placeholder="เช่น 08015AY"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  ชื่อลูกค้า
-                </label>
-                <input
-                  type="text"
-                  value={formData.customer_name}
-                  readOnly
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700"
-                  placeholder="ชื่อลูกค้า (อัตโนมัติ)"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  สาขา 
-                </label>
-                <select
-                  value={formData.branch_code}
-                  onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
-                  className="w-full border rounded-lg px-3 py-2"
-                >
-                  <option value="">เลือกสาขา</option>
-                  {Array.isArray(branches) && branches.map(b => (
-                    <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      สาขา 
+                    </label>
+                    <select
+                      value={formData.branch_code}
+                      onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
+                      className="w-full border rounded-lg px-3 py-2"
+                    >
+                      <option value="">เลือกสาขา</option>
+                      {Array.isArray(branches) && branches.map(b => (
+                        <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
             )}
 
             {/* Row 3: Start & End Dates */}

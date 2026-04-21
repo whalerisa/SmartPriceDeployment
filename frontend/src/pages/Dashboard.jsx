@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.js";
 import { useQuote } from "../hooks/useQuote.js";
-import Navbar from "../components/Navbar";
 import GlassSemiSizeModal from "../components/wizard/GlassSemiSizeModal.jsx";
 import api from "../services/api";
 
@@ -14,18 +13,8 @@ function Dashboard() {
   const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState("");
   
-  // ⭐ สิทธิ์ขึ้นอยู่กับ role แทนที่จะ hard code employee ID
-  // 1. เพิ่ม/อัปเดตราคา/จัดการโปรโมชั่น: SDM, PM (ทั้งหมด)
-  // 2. ราคาโครงการ: ZM, RM, SDM, PM (ทั้งหมด), Sales_Project
-  // 3. อนุมัติราคาพิเศษ: ZM, RM, SDM, PM (ทั้งหมด)
-  // PM ทั้งหมด: PM, PM_CLINE, PM_GLASS, PM_EQUIPMENT, PM_ALUMINIUM, PM_GYPSUM, PM_SEALANT
-  // Sales_Project: พนักงานขายโครงการ
-  const isPM = employee?.role && typeof employee.role === "string" && (
-    employee.role === "PM" || employee.role.startsWith("PM_")
-  );
-  const canUpdatePrice = ["SDM"].includes(employee?.role) || isPM;
-  const canManageProjectPrice = ["ZM", "RM", "SDM", "Sales_Project"].includes(employee?.role) || isPM;
-  const canApproveSpecialPrice = ["ZM", "RM", "SDM"].includes(employee?.role) || isPM;
+  const isAdmin = employee?.role && typeof employee.role === "string" && 
+    employee.role.toLowerCase() === "admin";
 
   // โหลดวันที่ปัจจุบัน (ภาษาไทย)
   useEffect(() => {
@@ -65,15 +54,43 @@ function Dashboard() {
     setIsSemiModalOpen(true);
   };
 
+  const handleAdminConfig = () => {
+    navigate("/admin-config");
+  };
+
   const [todayCount, setTodayCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [contactCustomerCount, setContactCustomerCount] = useState(0);
   const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const [specialPriceAvailable, setSpecialPriceAvailable] = useState(false);
+  
+  // ⭐ สิทธิ์การเข้าถึงหน้าต่างๆ จาก API
+  const [pageAccess, setPageAccess] = useState({
+    create_quote: true, // default allow for all
+    project_price: false,
+    special_price_approval: false,
+    update_price: false,
+  });
 
   useEffect(() => {
     async function loadDashboardData() {
       try {
+        // ⭐ โหลดสิทธิ์การเข้าถึงหน้าต่างๆ
+        try {
+          const resAccess = await api.get("/api/config/page-access/user-pages");
+          const accessiblePages = resAccess.data?.accessible_pages || [];
+          console.log("📋 Loaded page access:", accessiblePages); // Debug log
+          setPageAccess({
+            create_quote: accessiblePages.includes("create_quote"),
+            project_price: accessiblePages.includes("project_price"),
+            special_price_approval: accessiblePages.includes("special_price_approval"),
+            update_price: accessiblePages.includes("update_price"),
+          });
+        } catch (err) {
+          console.error("Failed to load page access:", err);
+          // ใช้ค่า default ถ้าโหลดไม่สำเร็จ
+        }
+
         // โหลดใบเสนอราคาทั้งหมด
         const resComplete = await api.get("/api/quotation", {
           params: { status: "complete" },
@@ -129,6 +146,30 @@ function Dashboard() {
     }
 
     loadDashboardData();
+  }, []);
+
+  // ⭐ Reload page access เมื่อกลับมาที่หน้า Dashboard
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // โหลดสิทธิ์ใหม่เมื่อกลับมาที่หน้า
+        api.get("/api/config/page-access/user-pages")
+          .then(res => {
+            const accessiblePages = res.data?.accessible_pages || [];
+            console.log("🔄 Reloaded page access:", accessiblePages);
+            setPageAccess({
+              create_quote: accessiblePages.includes("create_quote"),
+              project_price: accessiblePages.includes("project_price"),
+              special_price_approval: accessiblePages.includes("special_price_approval"),
+              update_price: accessiblePages.includes("update_price"),
+            });
+          })
+          .catch(err => console.error("Failed to reload page access:", err));
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
 
   return (
@@ -216,8 +257,20 @@ function Dashboard() {
         </div>
         <div className="mt-6 ">
 
-          {/* Special Price Approval Card - แสดงเฉพาะ ZM, RM, SDM, PM */}
-          {canApproveSpecialPrice && specialPriceAvailable && (
+          {/* Admin Config Card - แสดงเฉพาะ admin */}
+          {isAdmin && (
+            <div
+              className="group relative cursor-pointer overflow-hidden rounded-[33px] bg-gray-700 hover:bg-gray-800 p-8 text-white shadow-lg mb-6"
+              onClick={handleAdminConfig}
+            >
+              <img src="/assets/settings.png" className="w-16 h-16 mb-4" />
+              <h2 className="text-4xl font-bold">การตั้งค่าระบบ</h2>
+              <p className="mt-2 text-lg text-white/70">จัดการการตั้งค่าระบบ</p>
+            </div>
+          )}
+
+          {/* Special Price Approval Card - แสดงตามสิทธิ์จาก API */}
+          {pageAccess.special_price_approval && specialPriceAvailable && (
             <div
               className="group relative cursor-pointer overflow-hidden rounded-[33px] bg-[#9333EA] hover:bg-[#7e22ce] p-8 text-white shadow-lg"
               onClick={() => navigate("/special-price-approval")}
@@ -230,8 +283,8 @@ function Dashboard() {
             </div>
           )}
 
-          {/* Update Price Card - แสดงเฉพาะ SDM, PM */}
-          {canUpdatePrice && (
+          {/* Update Price Card - แสดงตามสิทธิ์จาก API */}
+          {pageAccess.update_price && (
             <div
               className="group relative cursor-pointer overflow-hidden  rounded-[33px] bg-[#0f766e] hover:bg-[#0f6d65] p-8 text-white shadow-lg mt-6"
               onClick={() => navigate("/update-price")}
@@ -242,8 +295,8 @@ function Dashboard() {
             </div>
           )}
 
-          {/* Project Price Card - แสดงเฉพาะ ZM, RM, SDM, PM */}
-          {canManageProjectPrice && (
+          {/* Project Price Card - แสดงตามสิทธิ์จาก API */}
+          {pageAccess.project_price && (
             <div
               className="group relative cursor-pointer overflow-hidden  rounded-[33px] bg-[#dd8901] hover:bg-[#cd7905] p-8 text-white shadow-lg mt-6"
               onClick={() => navigate("/project-price")}

@@ -19,6 +19,7 @@ Role Mappings:
 11. ผู้จัดการผลิตภัณฑ์ยิปซัม → PM_GYPSUM (Product Manager - Gypsum)
 12. ผู้จัดการผลิตภัณฑ์ซีลแลนท์ → PM_SEALANT (Product Manager - Sealant)
 13. กรรมการผู้จัดการ → CEO
+14. ผู้ดูแลระบบ → Admin (System Administrator)
 """
 
 import logging
@@ -41,11 +42,12 @@ THAI_ROLE_TO_CODE = {
     "ผู้จัดการผลิตภัณฑ์ยิปซัม": "PM",  # Product Manager - Gypsum
     "ผู้จัดการผลิตภัณฑ์ซีลแลนท์": "PM",  # Product Manager - Sealant
     "กรรมการผู้จัดการ": "CEO",
+    "ผู้ดูแลระบบ": "Admin",  # System Administrator
 }
 
 # Valid role codes (for when role is already in English)
 VALID_ROLE_CODES = {
-    "Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO",
+    "Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin",
     "PM_CLINE", "PM_GLASS", "PM_EQUIPMENT", "PM_ALUMINIUM", "PM_GYPSUM", "PM_SEALANT"
 }
 
@@ -135,6 +137,7 @@ def get_role_display_name(role_code: str) -> str:
         "PM_GYPSUM": "Product Manager - Gypsum",
         "PM_SEALANT": "Product Manager - Sealant",
         "CEO": "Chief Executive Officer",
+        "Admin": "System Administrator",
     }
     return role_display_names.get(role_code, role_code)
 

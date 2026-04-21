@@ -34,6 +34,11 @@ async def reorder_quotation_new(quote_no: str, branch_code: str):
         raise HTTPException(404, f"ไม่พบใบเสนอราคา {quote_no}")
 
     header = normalize_keys(row_to_dict(cursor, header))
+    
+    # ⭐ Debug: ดูว่า header มีอะไรบ้าง
+    logger.info(f"🔍 [REORDER] Quote {quote_no} header keys: {list(header.keys())}")
+    logger.info(f"🔍 [REORDER] project_code value: {header.get('project_code')}")
+    logger.info(f"🔍 [REORDER] ProjectCode value: {header.get('ProjectCode')}")
 
     # ดึงรายการสินค้า
     cursor.execute("SELECT * FROM Quote_Line WHERE QuoteID=?", (quote_no,))
@@ -244,7 +249,7 @@ async def reorder_quotation_new(quote_no: str, branch_code: str):
             "discount": header.get("DiscountAmount", 0),
             "pre_order": header.get("Pre_Order", 0),
             "required_delivery_date": header.get("Required_Delivery_Date"),
-            "project_code": header.get("project_code"),
+            "project_code": header.get("project_code") or header.get("ProjectCode"),  # ⭐ fallback to PascalCase
             "ibtBranch": header.get("IBT_branch"),
         },
         "isExpired": is_expired,

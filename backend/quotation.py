@@ -56,11 +56,12 @@ def _calculate_expire_date(create_date: str = None) -> str:
 
 def _generate_quote_no(branch_code: str, ibt_branch: str = None) -> str:
     """
-    Format:  BSQT-2502/0001 (normal)
-             BSQT-2502/0001-IBT-00TR (IBT)
+    Format:  BSQT-6902/0001 (normal) - ใช้ พ.ศ.
+             BSQT-6902/0001-IBT-00TR (IBT)
     """
     now = datetime.now()
-    yy = str(now.year)[-2:]
+    buddhist_year = now.year + 543  # แปลงเป็น พ.ศ.
+    yy = str(buddhist_year)[-2:]  # เอา 2 หลักท้าย
     mm = f"{now.month:02d}"
 
     prefix = f"{branch_code[-2:].upper()}QT-{yy}{mm}"
@@ -358,7 +359,7 @@ def update_quotation(quote_no: str, payload: dict = Body(...)):
         "CustomerCode": cust_code,
         "SalesID": employee.get("id", ""),
         "SalesName": employee.get("name", ""),
-        "ExpireDate": payload.get("expireDate", ""),
+        "ExpireDate": payload.get("expireDate") or _calculate_expire_date(now),  # ⭐ ถ้าไม่มี ให้คำนวณใหม่
         "ApproveDate": now,
         "BranchCode": employee.get("branchId", ""),
         "PaymentTerm": payload.get("paymentTerm", ""),
@@ -378,6 +379,7 @@ def update_quotation(quote_no: str, payload: dict = Body(...)):
         "ShippingCustomerPay": payload.get("totals", {}).get("shippingCustomerPay", 0),
         "Pre_Order": payload.get("pre_order", 0),  # ⭐ เพิ่ม Pre_Order field
         "Required_Delivery_Date": payload.get("required_delivery_date") or None,  # ⭐ เพิ่ม Required_Delivery_Date field
+        "project_code": payload.get("project_code") or None,  # ⭐ เพิ่ม project_code field
         "IBT_branch": ibt_branch,  # ⭐ เพิ่ม IBT_branch field
     }
 
@@ -388,7 +390,7 @@ def update_quotation(quote_no: str, payload: dict = Body(...)):
             PaymentTerm=?, CreditTerm=?, ShippingMethod=?, ShippingCost=?,
             DiscountAmount=?, SubtotalAmount=?, TotalAmount=?,
             NeedsTax=?, Remark=?, Remark_Shipping=?, LastUpdate=?,
-            CustomerName=?, Tel=?, tax_no=?, ShippingCustomerPay=?, Pre_Order=?, Required_Delivery_Date=?, IBT_branch=?
+            CustomerName=?, Tel=?, tax_no=?, ShippingCustomerPay=?, Pre_Order=?, Required_Delivery_Date=?, project_code=?, IBT_branch=?
         WHERE QuoteNo=?
     """, (
         header["Status"],
@@ -415,6 +417,7 @@ def update_quotation(quote_no: str, payload: dict = Body(...)):
         header["ShippingCustomerPay"],
         header["Pre_Order"],
         header["Required_Delivery_Date"],
+        header["project_code"],
         header["IBT_branch"],
         quote_no
     ))
@@ -898,7 +901,7 @@ async def reorder_quotation(quote_no: str, branch_code: str = Depends(get_branch
             "discount": header.get("DiscountAmount", 0),
             "pre_order": header.get("Pre_Order", 0),
             "required_delivery_date": header.get("Required_Delivery_Date"),
-            "project_code": header.get("project_code"),
+            "project_code": header.get("project_code") or header.get("ProjectCode"),  # ⭐ fallback to PascalCase
             "ibtBranch": header.get("IBT_branch"),
         },
         "isExpired": is_expired,
