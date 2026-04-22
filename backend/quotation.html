@@ -30,6 +30,16 @@ body {
   height: 100%;
 }
 
+/* ===== Page Number (บนขวามือ) ===== */
+.page-number {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 10px;
+  font-weight: bold;
+  color: #333;
+}
+
 /* ===== Page Break สำหรับรายการสินค้า ===== */
 .page-break {
   page-break-after: always;
@@ -160,9 +170,17 @@ body {
 
 <body>
 
+<!-- ===== คำนวณจำนวนหน้าก่อน ===== -->
+{% set items_per_page = 14 %}
+{% set total_items = q["items"]|length %}
+{% set total_pages = ((total_items - 1) // items_per_page) + 1 if total_items > 0 else 1 %}
+
 <div class="page">
 
 <div class="content-wrapper">
+
+<!-- ===== PAGE NUMBER ===== -->
+<div class="page-number">Page : 1</div>
 
 <!-- ===== HEADER ===== -->
 <div class="header">
@@ -192,14 +210,11 @@ body {
 </div>
 
 
-<!-- ===== CUSTOMER INFO ===== -->
-{% set items_per_page = 14 %}
-{% set total_items = q["items"]|length %}
-{% set total_pages = ((total_items - 1) // items_per_page) + 1 %}
-
+<!-- ===== ITEMS TABLE ===== -->
 {% for page_num in range(total_pages) %}
   {% set start_idx = page_num * items_per_page %}
   {% set end_idx = start_idx + items_per_page %}
+  {% set current_page = page_num + 1 %}
   
   <table class="items-table">
     <thead>
@@ -236,6 +251,9 @@ body {
   <div class="page">
   <div class="content-wrapper">
   
+  <!-- ===== PAGE NUMBER ===== -->
+  <div class="page-number">Page : {{ current_page + 1 }}</div>
+  
   <!-- ===== HEADER สำหรับหน้าถัดไป ===== -->
   <div class="header">
     {{ q.branchName or "บริษัท ห้างกระจกตังน้ำ จำกัด (สำนักงานใหญ่)" }}
@@ -256,12 +274,10 @@ body {
       เบอร์โทร : {{ q.customer.phone }}
     </div>
     <div class="col">
-      เลขที่เอกสาร : {{ q.quoteNo }}<br>
+      เลขที่เอกสาร : {{ q.quoteNo }} (SP) <br>
+      รหัสโครงการ : {{ q.projectCode }}<br>
       วันที่ : {{ q.date }}<br>
       พนักงานขาย : {{ q.sales }}<br>
-      {% if q.projectCode %}
-      <strong>รหัสโครงการ : {{ q.projectCode }}</strong>
-      {% endif %}
     </div>
   </div>
   {% endif %}

@@ -937,7 +937,12 @@ function Step6_Summary({ state, dispatch }) {
   useEffect(() => {
     const custCode = getCustomerCode(state.customer);
     
+    console.log('🔍 [PROJECT LOAD] useEffect triggered');
+    console.log('🔍 [PROJECT LOAD] Customer code:', custCode);
+    console.log('🔍 [PROJECT LOAD] Customer object:', state.customer);
+    
     if (!custCode || custCode.toUpperCase() === "N/A") {
+      console.log('❌ [PROJECT LOAD] No valid customer code, clearing projects');
       setCustomerProjects([]);
       setSelectedProject(null);
       setProjectPrices({});
@@ -946,14 +951,16 @@ function Step6_Summary({ state, dispatch }) {
 
     const fetchProjects = async () => {
       try {
-        console.log('🏗️ Loading projects for customer:', custCode);
+        console.log('🏗️ [PROJECT LOAD] Fetching projects for customer:', custCode);
         const res = await api.get('/api/project-prices/by-customer', {
           params: { customerCode: custCode }
         });
         
         const projects = res.data || [];
-        console.log('📦 Found projects:', projects);
-        console.log('🔍 state.project_code:', state.project_code);
+        console.log('📦 [PROJECT LOAD] API Response:', res.data);
+        console.log('📦 [PROJECT LOAD] Found projects count:', projects.length);
+        console.log('📦 [PROJECT LOAD] Projects:', projects);
+        console.log('🔍 [PROJECT LOAD] state.project_code:', state.project_code);
         setCustomerProjects(projects);
         
         // ⭐ ถ้ามี project_code ใน state (จาก draft) ให้ set selectedProject
@@ -2510,6 +2517,23 @@ function Step6_Summary({ state, dispatch }) {
             onRequiredDeliveryDateChange={setRequiredDeliveryDate}
             currentBranchCode={employee?.branchId || "00TR"}
             onOpenShipping={() => setShippingOpen(true)}
+            customerProjects={customerProjects}
+            selectedProject={selectedProject}
+            onProjectChange={(projectId) => {
+              const selectedProj = customerProjects.find(p => p.project_id === projectId);
+              
+              console.log('🏗️ ========================================');
+              console.log('🏗️ [PROJECT SELECT] User selected project');
+              console.log('🏗️ ========================================');
+              console.log('  - Project ID:', projectId);
+              console.log('  - Project Code:', selectedProj?.project_code);
+              console.log('  - Project Name:', selectedProj?.project_name);
+              console.log('  - Available projects:', customerProjects.length);
+              console.log('  - Current cart items:', state.cart?.length);
+              console.log('🏗️ ========================================');
+              
+              setSelectedProject(projectId);
+            }}
             onChange={(change) => {
               const payload = {
                 needsTax: Object.prototype.hasOwnProperty.call(change, "needsTax")
@@ -2784,48 +2808,6 @@ function Step6_Summary({ state, dispatch }) {
             <div className="sticky top-28 space-y-6 rounded-lg bg-gray-50 p-6 shadow-sm mt-3">
               {/* แสดง Promotion Banner */}
               <PromotionBanner promotions={promotions} />
-              
-              {/* Dropdown เลือกโครงการ */}
-              {customerProjects.length > 0 && (
-                <div className="border-b border-gray-200 pb-4">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    เลือกโครงการ (ถ้ามี)
-                  </label>
-                  <select
-                    value={selectedProject || ''}
-                    onChange={(e) => {
-                      const projectId = e.target.value ? parseInt(e.target.value) : null;
-                      const selectedProj = customerProjects.find(p => p.project_id === projectId);
-                      
-                      console.log('🏗️ ========================================');
-                      console.log('🏗️ [PROJECT SELECT] User selected project');
-                      console.log('🏗️ ========================================');
-                      console.log('  - Project ID:', projectId);
-                      console.log('  - Project Code:', selectedProj?.project_code);
-                      console.log('  - Project Name:', selectedProj?.project_name);
-                      console.log('  - Available projects:', customerProjects.length);
-                      console.log('  - Current cart items:', state.cart?.length);
-                      console.log('🏗️ ========================================');
-                      
-                      setSelectedProject(projectId);
-                    }}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  >
-                    <option value="">กรุณาเลือกโครงการ</option>
-                    {customerProjects.map((proj) => (
-                      <option key={proj.project_id} value={proj.project_id}>
-                        {proj.project_name || proj.project_code}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedProject && (
-                    <p className="mt-1 text-xs text-green-600">
-                      ✓ ใช้ราคาโครงการ
-                    </p>
-                  )}
-                </div>
-              )}
-              
               
               <div>
                 <h4 className="mb-2 text-lg font-semibold text-gray-800">ข้อมูลใบเสนอราคา</h4>

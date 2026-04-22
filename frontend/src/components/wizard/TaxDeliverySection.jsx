@@ -21,7 +21,24 @@ const BoxIcon = () => (
   <img src="/assets/pickup.png" alt="Box Icon" className="w-10 h-10 object-contain" />
 );
 
-function TaxDeliverySection({ needsTax, deliveryType, onChange, onOpenShipping, billTaxName, ibtBranch, branches = [], isPreOrder, onPreOrderChange, requiredDeliveryDate, onRequiredDeliveryDateChange, currentBranchCode }) {
+function TaxDeliverySection({ 
+  needsTax, 
+  deliveryType, 
+  onChange, 
+  onOpenShipping, 
+  billTaxName, 
+  ibtBranch, 
+  branches = [], 
+  isPreOrder, 
+  onPreOrderChange, 
+  requiredDeliveryDate, 
+  onRequiredDeliveryDateChange, 
+  currentBranchCode,
+  // ⭐ Project selection props
+  customerProjects = [],
+  selectedProject,
+  onProjectChange
+}) {
   const update = (change) => {
     if (onChange) onChange(change);
   };
@@ -163,6 +180,37 @@ function TaxDeliverySection({ needsTax, deliveryType, onChange, onOpenShipping, 
               ))}
             </select>
           </div>
+          
+          {/* Dropdown เลือกโครงการ (ถ้ามี) */}
+          {customerProjects.length > 0 && (
+            <div className="mt-4 w-64">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                เลือกโครงการ (ถ้ามี)
+              </label>
+              <select
+                value={selectedProject || ''}
+                onChange={(e) => {
+                  const projectId = e.target.value ? parseInt(e.target.value) : null;
+                  if (onProjectChange) {
+                    onProjectChange(projectId);
+                  }
+                }}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+              >
+                <option value="">กรุณาเลือกโครงการ</option>
+                {customerProjects.map((proj) => (
+                  <option key={proj.project_id} value={proj.project_id}>
+                    {proj.project_code} - {proj.project_name || 'ไม่มีชื่อโครงการ'}
+                  </option>
+                ))}
+              </select>
+              {selectedProject && (
+                <p className="mt-1 text-xs text-green-600">
+                  ✓ ใช้ราคาโครงการ
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
