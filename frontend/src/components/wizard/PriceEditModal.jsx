@@ -98,9 +98,9 @@ export default function PriceEditModal({ item, calculatedItem, onClose, onSave, 
 
   const [otherPrice, setOtherPrice] = useState(otherProductUnitPrice);
 
-  // คำนวณราคาใหม่ (พร้อมปัด)
-  const calculatedPricePerSheet = roundUp050(pricePerSqft * currentSqft);
-  const calculatedPricePerLine = roundUp050(pricePerKg * weight);
+  // คำนวณราคาใหม่ (อลูมิเนียมไม่ปัด สินค้าอื่นปัด)
+  const calculatedPricePerSheet = isGlass ? roundUp050(pricePerSqft * currentSqft) : pricePerSqft * currentSqft;
+  const calculatedPricePerLine = isAluminium ? pricePerKg * weight : roundUp050(pricePerKg * weight);
 
   const handleSave = () => {
     console.log('💾 [PRICE EDIT] Saving manual price:', {

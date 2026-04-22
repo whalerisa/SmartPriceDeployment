@@ -467,7 +467,7 @@ function AdminConfig() {
               </div>
 
               {/* PM */}
-              <div className="border border-gray-300 rounded-lg p-4 bg-blue-50 border-blue-300">
+              <div className="border border-gray-300 rounded-lg p-4 bg-blue-50 ">
                 <div className="mb-4">
                   <h4 className="font-semibold text-gray-900">PM (Product Manager)</h4>
                   <p className="text-xs text-gray-500">ผู้จัดการสินค้า - อนุมัติราคาต่ำสุด</p>

@@ -446,8 +446,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             is_sold_by_pack = bool(r.get("isSoldByPack", False))
             
             if category == "A":
-                # อลูมิเนียม: คูณน้ำหนัก
+                # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
                 raw = float(r["NewPrice"]) * float(r.get("product_weight", 0) or 0)
+                return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
             elif category == "G" and is_sold_by_pack:
                 # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง
                 raw = float(r["NewPrice"])
@@ -455,12 +456,21 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 # อื่นๆ: ใช้ NewPrice โดยตรง
                 raw = float(r["NewPrice"])
             
-            return round_up_050(raw)
+            return round_up_050(raw)  # ⭐ สินค้าอื่นๆปัดเศษ
         
         df_calc["UnitPrice"] = df_calc.apply(_compute_unit_price_default, axis=1)
 
-
-        df_calc["LineTotal"] = df_calc["UnitPrice"] * df_calc["Quantity"]
+        # ⭐ คำนวณ LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
+        def _compute_line_total_default(row):
+            category = str(row.get("category", "")).upper()
+            line_total = row["UnitPrice"] * row["Quantity"]
+            
+            if category == "A":
+                return line_total  # อลูมิเนียมไม่ปัดเศษ
+            else:
+                return round_up_050(line_total)
+        
+        df_calc["LineTotal"] = df_calc.apply(_compute_line_total_default, axis=1)
         # ===== TOTAL CALC (MATCH NORMAL MODE) =====
 
         subtotal_gross = float(df_calc["LineTotal"].sum())
@@ -481,7 +491,18 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             
             # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
             df_calc["UnitPrice"] = df_calc["UnitPrice"] + tax_invoice_surcharge
-            df_calc["LineTotal"] = df_calc["UnitPrice"] * df_calc["Quantity"]
+            
+            # ⭐ คำนวณ LineTotal ใหม่ (ปัดเศษ ยกเว้นอลูมิเนียม)
+            def _compute_line_total_with_tax(row):
+                category = str(row.get("category", "")).upper()
+                line_total = row["UnitPrice"] * row["Quantity"]
+                
+                if category == "A":
+                    return line_total  # อลูมิเนียมไม่ปัดเศษ
+                else:
+                    return round_up_050(line_total)
+            
+            df_calc["LineTotal"] = df_calc.apply(_compute_line_total_with_tax, axis=1)
             subtotal_gross = float(df_calc["LineTotal"].sum())
             gross_before_vat = subtotal_gross + shipping_customer_pay
 
@@ -517,11 +538,11 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             
             # ⭐ สำหรับกระจก:
             # - ถ้าขายยกแพ็ก: ใช้ UnitPrice โดยตรง
-            # - ถ้าปกติ: คูณ sqft
+            # - ถ้าปกติ: คูณ sqft และปัดเศษ
             price_per_sheet = (
                 row["UnitPrice"]  # ⭐ ขายยกแพ็ก
                 if is_glass and is_sold_by_pack
-                else round(row["UnitPrice"] * row.get("Sqft_Sheet", 0), 2)
+                else round_up_050(row["UnitPrice"] * row.get("Sqft_Sheet", 0))
                 if is_glass
                 else row["UnitPrice"]
             )
@@ -681,12 +702,15 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     
     # คำนวณ UnitPrice ก่อน (เพื่อใช้เปรียบเทียบกับราคาประวัติ)
     def _compute_unit_price_temp(row):
-        raw = (
-            float(row["NewPrice"]) * float(row.get("product_weight", 0) or 0)
-            if str(row.get("category", "")).upper() == "A"
-            else float(row["NewPrice"])
-        )
-        return round_up_050(raw)
+        category = str(row.get("category", "")).upper()
+        
+        if category == "A":
+            # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
+            raw = float(row["NewPrice"]) * float(row.get("product_weight", 0) or 0)
+            return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
+        else:
+            raw = float(row["NewPrice"])
+            return round_up_050(raw)  # ⭐ สินค้าอื่นๆปัดเศษ
 
     df_price["UnitPrice_temp"] = df_price.apply(_compute_unit_price_temp, axis=1)
     
@@ -919,8 +943,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         is_sold_by_pack = bool(row.get("isSoldByPack", False))  # ⭐ เช็ค flag
         
         if category == "A":
-            # อลูมิเนียม: คูณน้ำหนัก
+            # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
             raw = float(row["NewPrice"]) * float(row.get("product_weight", 0) or 0)
+            return raw  # ⭐ อลูมิเนียมไม่ปัดเศษเลย
         elif category == "G" and is_sold_by_pack:
             # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง (ไม่คูณ sqft)
             raw = float(row["NewPrice"])
@@ -932,7 +957,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         if is_project_price:
             return raw  # ⭐ ใช้ราคาเป๊ะๆ ไม่ปัดเศษเลย
         else:
-            return round_up_050(raw)  # ราคาระบบ/ประวัติ ปัดทีละ 0.50
+            return round_up_050(raw)  # ⭐ ราคาระบบ/ประวัติ ปัดทีละ 0.50
 
     df_price["UnitPrice"] = df_price.apply(_compute_unit_price, axis=1)
 
@@ -978,7 +1003,17 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     
     print("="*80 + "\n")
 
-    df_price["_LineTotal"] = df_price["UnitPrice"] * df_price["Quantity"]
+    # ⭐ คำนวณ _LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
+    def _compute_line_total(row):
+        category = str(row.get("category", "")).upper()
+        line_total = row["UnitPrice"] * row["Quantity"]
+        
+        if category == "A":
+            return line_total  # อลูมิเนียมไม่ปัดเศษ
+        else:
+            return round_up_050(line_total)
+    
+    df_price["_LineTotal"] = df_price.apply(_compute_line_total, axis=1)
 
     # ⭐ Debug: แสดง Quantity, UnitPrice, _LineTotal
     print("\n=== DEBUG: LineTotal calculation ===")
@@ -1006,7 +1041,18 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         
         # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
         df_price["UnitPrice"] = df_price["UnitPrice"] + tax_invoice_surcharge
-        df_price["_LineTotal"] = df_price["UnitPrice"] * df_price["Quantity"]
+        
+        # ⭐ คำนวณ _LineTotal ใหม่ (ปัดเศษ ยกเว้นอลูมิเนียม)
+        def _compute_line_total_with_tax(row):
+            category = str(row.get("category", "")).upper()
+            line_total = row["UnitPrice"] * row["Quantity"]
+            
+            if category == "A":
+                return line_total  # อลูมิเนียมไม่ปัดเศษ
+            else:
+                return round_up_050(line_total)
+        
+        df_price["_LineTotal"] = df_price.apply(_compute_line_total_with_tax, axis=1)
         subtotal_gross = float(df_price["_LineTotal"].sum())
 
     # 👉 รวมสินค้า + ค่าขนส่ง
@@ -1043,12 +1089,12 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
         # สำหรับกระจก: 
         # - ถ้าขายยกแพ็ก: ใช้ UnitPrice โดยตรง (ไม่คูณ sqft)
-        # - ถ้าปกติ: UnitPrice เป็นราคาต่อตารางฟุต ต้องคูณ sqft เพื่อได้ราคาต่อแผ่น
+        # - ถ้าปกติ: UnitPrice เป็นราคาต่อตารางฟุต ต้องคูณ sqft เพื่อได้ราคาต่อแผ่น และปัดเศษ
         # สำหรับสินค้าอื่นๆ: ใช้ UnitPrice โดยตรง
         price_per_sheet = (
             row["UnitPrice"]  # ⭐ ขายยกแพ็ก: ใช้ราคาต่อหน่วยตรงๆ
             if is_glass and is_sold_by_pack
-            else round(row["UnitPrice"] * row.get("Sqft_Sheet", 0), 2)
+            else round_up_050(row["UnitPrice"] * row.get("Sqft_Sheet", 0))
             if is_glass
             else row["UnitPrice"]
         )
