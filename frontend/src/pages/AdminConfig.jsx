@@ -759,8 +759,66 @@ function AdminConfig() {
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">⚙️ การตั้งค่าระบบ</h3>
                   <p className="text-sm text-gray-600 mb-6">
-                    ตั้งค่าพารามิเตอร์ระบบต่างๆ เช่น อัตราภาษี เขตเวลา ภาษา
+                    ตั้งค่าพารามิเตอร์ระบบต่างๆ เช่น อัตราภาษี เขตเวลา ภาษา รูปแบบ Project Code
                   </p>
+
+                  {/* Project Code Mode */}
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
+                    <div className="mb-4">
+                      <h4 className="font-semibold text-gray-900">🔢 รูปแบบ Project Code</h4>
+                      <p className="text-xs text-gray-500">เลือกวิธีการสร้าง Project Code</p>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="project_code_mode"
+                          value="auto"
+                          checked={editedConfig?.system_config?.project_code_mode !== "manual"}
+                          onChange={(e) =>
+                            setEditedConfig({
+                              ...editedConfig,
+                              system_config: {
+                                ...editedConfig.system_config,
+                                project_code_mode: "auto",
+                              },
+                            })
+                          }
+                          className="mt-1 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">Running Number (อัตโนมัติ)</div>
+                          <div className="text-xs text-gray-500">
+                            ระบบจะสร้างเลขที่อัตโนมัติ เช่น PJ6704001, TR6704002
+                          </div>
+                        </div>
+                      </label>
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="project_code_mode"
+                          value="manual"
+                          checked={editedConfig?.system_config?.project_code_mode === "manual"}
+                          onChange={(e) =>
+                            setEditedConfig({
+                              ...editedConfig,
+                              system_config: {
+                                ...editedConfig.system_config,
+                                project_code_mode: "manual",
+                              },
+                            })
+                          }
+                          className="mt-1 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <div className="font-medium text-gray-900">กรอกเอง (Manual)</div>
+                          <div className="text-xs text-gray-500">
+                            ผู้ใช้สามารถกรอก Project Code เองได้
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
 
                   {/* VAT Rate */}
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">

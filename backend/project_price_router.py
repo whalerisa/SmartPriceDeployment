@@ -144,36 +144,56 @@ async def create_project_price(project: ProjectPriceCreate, authorization: str =
         
         print(f"🏗️ [CREATE PROJECT PRICE] Mode: {mode}, Employee Branch: {employee_branch}, Selected Branch: {project.branch_code}")
         
-        # สร้างเลขที่เอกสารอัตโนมัติ
-        now = datetime.now()
-        buddhist_year = str(now.year + 543)[-2:]
-        month = str(now.month).zfill(2)
+        # ⭐ ตรวจสอบว่าเป็น manual mode หรือไม่
+        project_code_mode = os.getenv("PROJECT_CODE_MODE", "auto")
         
-        if mode == 'customer':
-            # Customer mode: YYMMCUSTCODE (ไม่มี running number)
-            prefix = f"{buddhist_year}{month}{project.customer_code}"
-        elif mode == 'branch':
-            # Branch mode: BRYYMMXXX (BR = branch code 2 ตัวอักษรของคนสร้าง)
-            branch_code = employee_branch[-2:].upper() if employee_branch else 'XX'
-            prefix = f"{branch_code}{buddhist_year}{month}"
-        else:  # project
-            # Project mode: PJYYMMXXX (PJ = Project, ไม่มี branch)
-            prefix = f"PJ{buddhist_year}{month}"
-        
-        # ⭐ Customer mode ไม่ต้องมี running number
-        if mode == 'customer':
-            generated_code = prefix
-        else:
-            # นับจำนวนเอกสารที่มี prefix เดียวกัน
+        if project_code_mode == "manual" and project.project_code:
+            # Manual mode: ใช้ project_code ที่ผู้ใช้กรอกมา
+            generated_code = project.project_code.strip()
+            
+            # ตรวจสอบว่า project_code ซ้ำหรือไม่
             cursor.execute("""
                 SELECT COUNT(*) as cnt FROM Project_Price_Header
-                WHERE project_code LIKE ?
-            """, (f"{prefix}%",))
-            count = cursor.fetchone()[0]
-            running_number = str(count + 1).zfill(3)
-            generated_code = f"{prefix}{running_number}"
-        
-        print(f"🏗️ [CREATE PROJECT PRICE] Generated Code: {generated_code}")
+                WHERE project_code = ?
+            """, (generated_code,))
+            if cursor.fetchone()[0] > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Project Code '{generated_code}' มีอยู่ในระบบแล้ว กรุณาใช้รหัสอื่น"
+                )
+            
+            print(f"🏗️ [CREATE PROJECT PRICE] Manual Mode - Using provided code: {generated_code}")
+        else:
+            # Auto mode: สร้างเลขที่เอกสารอัตโนมัติ
+            now = datetime.now()
+            buddhist_year = str(now.year + 543)[-2:]
+            month = str(now.month).zfill(2)
+            
+            if mode == 'customer':
+                # Customer mode: YYMMCUSTCODE (ไม่มี running number)
+                prefix = f"{buddhist_year}{month}{project.customer_code}"
+            elif mode == 'branch':
+                # Branch mode: BRYYMMXXX (BR = branch code 2 ตัวอักษรของคนสร้าง)
+                branch_code = employee_branch[-2:].upper() if employee_branch else 'XX'
+                prefix = f"{branch_code}{buddhist_year}{month}"
+            else:  # project
+                # Project mode: PJYYMMXXX (PJ = Project, ไม่มี branch)
+                prefix = f"PJ{buddhist_year}{month}"
+            
+            # ⭐ Customer mode ไม่ต้องมี running number
+            if mode == 'customer':
+                generated_code = prefix
+            else:
+                # นับจำนวนเอกสารที่มี prefix เดียวกัน
+                cursor.execute("""
+                    SELECT COUNT(*) as cnt FROM Project_Price_Header
+                    WHERE project_code LIKE ?
+                """, (f"{prefix}%",))
+                count = cursor.fetchone()[0]
+                running_number = str(count + 1).zfill(3)
+                generated_code = f"{prefix}{running_number}"
+            
+            print(f"🏗️ [CREATE PROJECT PRICE] Auto Mode - Generated Code: {generated_code}")
         
         # สร้าง Project Price Header
         cursor.execute("""

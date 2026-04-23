@@ -23,7 +23,8 @@
     "allowed_roles": [
       "Admin",
       "ZM",
-      "Sales_Project"
+      "Sales_Project",
+      "RM"
     ]
   },
   "special_price_approval": {

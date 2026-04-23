@@ -78,6 +78,7 @@ class SystemConfig(BaseModel):
     language: str = "th"
     version: str = "1.0.0"
     vat_rate: float = 0.07  # ⭐ VAT rate (default 7%)
+    project_code_mode: str = "auto"  # ⭐ Project code mode: "auto" (running number) or "manual" (user input)
 
 
 class ConfigResponse(BaseModel):
@@ -230,12 +231,15 @@ async def get_config(employee: dict = Depends(get_current_employee)):
         except:
             vat_rate = 0.07
         
+        project_code_mode = os.getenv("PROJECT_CODE_MODE", "auto")
+        
         system_config = SystemConfig(
             base_url=BASE_URL,
             timezone=os.getenv("TIMEZONE", "Asia/Bangkok"),
             language=os.getenv("LANGUAGE", "th"),
             version=os.getenv("APP_VERSION", "1.0.0"),
-            vat_rate=vat_rate
+            vat_rate=vat_rate,
+            project_code_mode=project_code_mode
         )
         
         return ConfigResponse(
@@ -401,6 +405,8 @@ async def update_config(
                 os.environ["LANGUAGE"] = sys_cfg["language"]
             if "vat_rate" in sys_cfg:
                 os.environ["VAT_RATE"] = str(sys_cfg["vat_rate"])
+            if "project_code_mode" in sys_cfg:
+                os.environ["PROJECT_CODE_MODE"] = sys_cfg["project_code_mode"]
         
         logger.info(f"Config updated by {employee.get('employee_id')}")
         

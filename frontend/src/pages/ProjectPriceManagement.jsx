@@ -39,6 +39,9 @@ const ProjectPriceManagement = () => {
   // Edit mode
   const [editingProjectId, setEditingProjectId] = useState(null);
   
+  // Project Code Mode (auto or manual)
+  const [projectCodeMode, setProjectCodeMode] = useState('auto'); // 'auto' | 'manual'
+  
   // Form state
   const [formData, setFormData] = useState({
     project_code: '',
@@ -96,6 +99,7 @@ const ProjectPriceManagement = () => {
       loadProjects();
     }
     loadBranches();
+    loadProjectCodeMode();
   }, [employee?.id]);
 
   // Close employee dropdown when clicking outside
@@ -202,6 +206,17 @@ const ProjectPriceManagement = () => {
     } catch (err) {
       console.error('Error loading branches:', err);
       setBranches([]); // Set empty array on error
+    }
+  };
+
+  const loadProjectCodeMode = async () => {
+    try {
+      const res = await api.get('/api/config/settings');
+      const mode = res.data?.system_config?.project_code_mode || 'auto';
+      setProjectCodeMode(mode);
+    } catch (err) {
+      console.error('Error loading project code mode:', err);
+      setProjectCodeMode('auto'); // Default to auto
     }
   };
 
@@ -601,6 +616,14 @@ const ProjectPriceManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // ⭐ Validate project_code ในโหมด manual
+    if (projectCodeMode === 'manual' && !editingProjectId) {
+      if (!formData.project_code || formData.project_code.trim() === '') {
+        alert('กรุณากรอกรหัสโครงการ');
+        return;
+      }
+    }
     
     // ⭐ ไม่บังคับให้ใส่สินค้า แต่ต้องใส่ชื่อโครงการ
     // items.length === 0 ไม่ต้องแจ้งเตือน
@@ -1306,6 +1329,26 @@ const ProjectPriceManagement = () => {
             ) : priceMode === 'customer' ? (
               // ฟอร์มสำหรับโหมดลูกค้าพิเศษ - ไม่มีชื่อโครงการ
               <div className="grid grid-cols-3 gap-4">
+                {/* Project Code Input (Manual Mode Only) */}
+                {projectCodeMode === 'manual' && (
+                  <div className="col-span-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      รหัสโครงการ <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.project_code}
+                      onChange={(e) => setFormData({...formData, project_code: e.target.value.toUpperCase()})}
+                      className="w-full border rounded-lg px-3 py-2"
+                      placeholder="กรอกรหัสโครงการ"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 กรอกรหัสโครงการเอง (ระบบไม่สร้างอัตโนมัติ)
+                    </p>
+                  </div>
+                )}
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     รหัสลูกค้า <span className="text-red-500">*</span>
@@ -1327,6 +1370,11 @@ const ProjectPriceManagement = () => {
                     className="w-full border rounded-lg px-3 py-2"
                     placeholder="เช่น 08015AY"
                   />
+                  {projectCodeMode === 'auto' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 รหัสโครงการจะถูกสร้างอัตโนมัติเมื่อบันทึก
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -1361,6 +1409,26 @@ const ProjectPriceManagement = () => {
             ) : (
               // ฟอร์มสำหรับโหมดโครงการ/สาขา - มีชื่อโครงการ
               <>
+                {/* Project Code Input (Manual Mode Only) */}
+                {projectCodeMode === 'manual' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      รหัสโครงการ <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.project_code}
+                      onChange={(e) => setFormData({...formData, project_code: e.target.value.toUpperCase()})}
+                      className="w-full border rounded-lg px-3 py-2"
+                      placeholder="กรอกรหัสโครงการ เช่น PJ6704001"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 กรอกรหัสโครงการเอง (ระบบไม่สร้างอัตโนมัติ)
+                    </p>
+                  </div>
+                )}
+                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     ชื่อโครงการ <span className="text-red-500">*</span>
@@ -1373,6 +1441,11 @@ const ProjectPriceManagement = () => {
                     className="w-full border rounded-lg px-3 py-2"
                     placeholder="เช่น โครงการคอนโดXXX"
                   />
+                  {projectCodeMode === 'auto' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      💡 รหัสโครงการจะถูกสร้างอัตโนมัติเมื่อบันทึก
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
