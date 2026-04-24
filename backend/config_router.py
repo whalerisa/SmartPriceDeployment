@@ -15,17 +15,9 @@ import os
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from pydantic import BaseModel
-import requests
 
 from auth_dependency import get_employee_info
 from config.config_external_api import (
-    CUSTOMER_API_URL, CUSTOMER_API_HEADERS,
-    INVOICE_API_URL, INVOICE_API_HEADERS,
-    CREDIT_API_URL, CREDIT_API_HEADERS,
-    EMP_API_URL, EMP_API_HEADERS,
-    LOCATION_API_URL, LOCATION_API_HEADERS,
-    ITEMCOST_API_URL, ITEMCOST_API_HEADERS,
-    REMAININGCREDIT_URL, REMAININGCREDIT_HEADERS,
     SDM_THRESHOLD_PRICE, BASE_URL
 )
 
@@ -34,14 +26,6 @@ router = APIRouter(tags=["Config"])
 
 
 # ==================== Models ====================
-
-class APIConfig(BaseModel):
-    """API Configuration"""
-    name: str
-    url: str
-    key: str
-    status: Optional[str] = None
-
 
 class RoleApprovalScope(BaseModel):
     """Role Approval Scope Configuration"""
@@ -85,18 +69,10 @@ class SystemConfig(BaseModel):
 
 class ConfigResponse(BaseModel):
     """Complete Configuration Response"""
-    api_configs: Dict[str, APIConfig]
+    api_configs: Dict[str, Any]  # Empty dict for security
     price_config: PriceConfig
     access_control: AccessControlConfig
     system_config: SystemConfig
-
-
-class APIStatusResponse(BaseModel):
-    """API Status Response"""
-    api_name: str
-    url: str
-    status: str  # "connected", "disconnected", "error"
-    message: str
 
 
 # ==================== Helper Functions ====================
@@ -113,19 +89,8 @@ def check_admin_role(employee_info: dict) -> bool:
 
 
 def test_api_connection(url: str, headers: dict, timeout: int = 5) -> tuple[bool, str]:
-    """Test API connection"""
-    try:
-        response = requests.get(url, headers=headers, timeout=timeout)
-        if response.status_code in [200, 401, 403]:
-            return True, "Connected"
-        else:
-            return False, f"HTTP {response.status_code}"
-    except requests.exceptions.Timeout:
-        return False, "Timeout"
-    except requests.exceptions.ConnectionError:
-        return False, "Connection Error"
-    except Exception as e:
-        return False, str(e)
+    """Test API connection - DEPRECATED: Not used anymore for security reasons"""
+    return False, "API testing disabled for security"
 
 
 # ==================== Endpoints ====================
@@ -141,49 +106,15 @@ async def get_config(employee: dict = Depends(get_current_employee)):
     """
     Get all system configuration.
     Only accessible to admin users.
+    
+    Note: API configurations (URLs and keys) are not included for security reasons.
     """
     if not check_admin_role(employee):
         raise HTTPException(status_code=403, detail="Only admin can access config")
     
     try:
-        # API Configurations
-        api_configs = {
-            "customer_api": APIConfig(
-                name="Customer API",
-                url=CUSTOMER_API_URL,
-                key=os.getenv("CUSTOMER_API_KEY", "")
-            ),
-            "invoice_api": APIConfig(
-                name="Invoice API",
-                url=INVOICE_API_URL,
-                key=os.getenv("INVOICE_API_KEY", "")
-            ),
-            "credit_api": APIConfig(
-                name="Credit API",
-                url=CREDIT_API_URL,
-                key=os.getenv("CREDIT_API_KEY", "")
-            ),
-            "employee_api": APIConfig(
-                name="Employee API",
-                url=EMP_API_URL,
-                key=os.getenv("EMP_API_KEY", "")
-            ),
-            "location_api": APIConfig(
-                name="Location API",
-                url=LOCATION_API_URL,
-                key=os.getenv("LOCATION_API_KEY", "")
-            ),
-            "itemcost_api": APIConfig(
-                name="Item Cost API",
-                url=ITEMCOST_API_URL,
-                key=os.getenv("ITEM_COST_API_KEY", "")
-            ),
-            "remaining_credit_api": APIConfig(
-                name="Remaining Credit API",
-                url=REMAININGCREDIT_URL,
-                key=os.getenv("REMAININGCREDIT_KEY", "")
-            ),
-        }
+        # API Configurations - Return empty for security (not editable via UI)
+        api_configs = {}
         
         # Price Configuration
         # Load role_approval_scope from cache first, then environment
@@ -260,39 +191,6 @@ async def get_config(employee: dict = Depends(get_current_employee)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api-status", response_model=list[APIStatusResponse])
-async def get_api_status(employee: dict = Depends(get_current_employee)):
-    """
-    Check API connectivity status.
-    Only accessible to admin users.
-    """
-    if not check_admin_role(employee):
-        raise HTTPException(status_code=403, detail="Only admin can access config")
-    
-    apis = [
-        ("Customer API", CUSTOMER_API_URL, CUSTOMER_API_HEADERS),
-        ("Invoice API", INVOICE_API_URL, INVOICE_API_HEADERS),
-        ("Credit API", CREDIT_API_URL, CREDIT_API_HEADERS),
-        ("Employee API", EMP_API_URL, EMP_API_HEADERS),
-        ("Location API", LOCATION_API_URL, LOCATION_API_HEADERS),
-        ("Item Cost API", ITEMCOST_API_URL, ITEMCOST_API_HEADERS),
-        ("Remaining Credit API", REMAININGCREDIT_URL, REMAININGCREDIT_HEADERS),
-    ]
-    
-    results = []
-    for api_name, url, headers in apis:
-        is_connected, message = test_api_connection(url, headers)
-        status = "connected" if is_connected else "disconnected"
-        results.append(APIStatusResponse(
-            api_name=api_name,
-            url=url,
-            status=status,
-            message=message
-        ))
-    
-    return results
-
-
 @router.put("/settings", response_model=dict)
 async def update_config(
     config_data: Dict[str, Any],
@@ -303,16 +201,20 @@ async def update_config(
     Only accessible to admin users.
     
     Supported updates:
-    - api_configs (all API URLs and keys)
     - price_config.sdm_threshold_price
     - price_config.role_approval_scope
     - access_control.price_update_employees
     - access_control.project_price_employees
     - access_control.special_price_approvers
     - access_control.page_access
-    - system_config.base_url
     - system_config.timezone
     - system_config.language
+    - system_config.vat_rate
+    - system_config.project_code_mode
+    - system_config.project_files_folder
+    - system_config.product_images_folder
+    
+    Note: API configurations (URLs and keys) cannot be updated via this endpoint for security reasons.
     """
     if not check_admin_role(employee):
         raise HTTPException(status_code=403, detail="Only admin can update config")
@@ -324,58 +226,8 @@ async def update_config(
         # Update environment variables (in-memory only, not persisted)
         # For production, you should update .env file or use a database
         
-        # Update API configurations
-        if "api_configs" in config_data:
-            api_cfgs = config_data["api_configs"]
-            
-            # Customer API
-            if "customer_api" in api_cfgs:
-                if "url" in api_cfgs["customer_api"]:
-                    os.environ["CUSTOMER_API_URL"] = api_cfgs["customer_api"]["url"]
-                if "key" in api_cfgs["customer_api"]:
-                    os.environ["CUSTOMER_API_KEY"] = api_cfgs["customer_api"]["key"]
-            
-            # Invoice API
-            if "invoice_api" in api_cfgs:
-                if "url" in api_cfgs["invoice_api"]:
-                    os.environ["INVOICE_API_URL"] = api_cfgs["invoice_api"]["url"]
-                if "key" in api_cfgs["invoice_api"]:
-                    os.environ["INVOICE_API_KEY"] = api_cfgs["invoice_api"]["key"]
-            
-            # Credit API
-            if "credit_api" in api_cfgs:
-                if "url" in api_cfgs["credit_api"]:
-                    os.environ["CREDIT_API_URL"] = api_cfgs["credit_api"]["url"]
-                if "key" in api_cfgs["credit_api"]:
-                    os.environ["CREDIT_API_KEY"] = api_cfgs["credit_api"]["key"]
-            
-            # Employee API
-            if "employee_api" in api_cfgs:
-                if "url" in api_cfgs["employee_api"]:
-                    os.environ["EMP_API_URL"] = api_cfgs["employee_api"]["url"]
-                if "key" in api_cfgs["employee_api"]:
-                    os.environ["EMP_API_KEY"] = api_cfgs["employee_api"]["key"]
-            
-            # Location API
-            if "location_api" in api_cfgs:
-                if "url" in api_cfgs["location_api"]:
-                    os.environ["LOCATION_API_URL"] = api_cfgs["location_api"]["url"]
-                if "key" in api_cfgs["location_api"]:
-                    os.environ["LOCATION_API_KEY"] = api_cfgs["location_api"]["key"]
-            
-            # Item Cost API
-            if "itemcost_api" in api_cfgs:
-                if "url" in api_cfgs["itemcost_api"]:
-                    os.environ["ITEMCOST_API_URL"] = api_cfgs["itemcost_api"]["url"]
-                if "key" in api_cfgs["itemcost_api"]:
-                    os.environ["ITEM_COST_API_KEY"] = api_cfgs["itemcost_api"]["key"]
-            
-            # Remaining Credit API
-            if "remaining_credit_api" in api_cfgs:
-                if "url" in api_cfgs["remaining_credit_api"]:
-                    os.environ["REMAININGCREDIT_URL"] = api_cfgs["remaining_credit_api"]["url"]
-                if "key" in api_cfgs["remaining_credit_api"]:
-                    os.environ["REMAININGCREDIT_KEY"] = api_cfgs["remaining_credit_api"]["key"]
+        # ⚠️ API configurations are NOT updatable via this endpoint for security reasons
+        # API URLs and keys should be managed through environment variables or .env file
         
         if "price_config" in config_data:
             price_cfg = config_data["price_config"]
@@ -631,3 +483,221 @@ async def get_user_pages(employee: dict = Depends(get_current_employee)):
         "accessible_pages": accessible_pages,
         "user_role": user_role
     }
+
+
+# ==================== Region Manager Mapping Endpoints ====================
+
+class RegionInfo(BaseModel):
+    """Region Information"""
+    region_code: str
+    region_name: str
+    region_name_thai: str
+    rm_employee_id: Optional[str] = None
+    branches: list[str]
+
+
+class RegionMappingResponse(BaseModel):
+    """Region Mapping Response"""
+    regions: Dict[str, RegionInfo]
+
+
+@router.get("/regions", response_model=RegionMappingResponse)
+async def get_region_mapping(employee: dict = Depends(get_current_employee)):
+    """
+    Get region to RM mapping configuration from employees.json.
+    Only accessible to admin users.
+    """
+    if not check_admin_role(employee):
+        raise HTTPException(status_code=403, detail="Only admin can access region config")
+    
+    try:
+        import json
+        from branch_region_mapping import BRANCH_REGION_MAP
+        
+        # Fix: Ensure we're looking in the backend directory
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        employees_file = os.path.join(backend_dir, "employees.json")
+        
+        # If file doesn't exist in backend dir, it might be running from root
+        if not os.path.exists(employees_file):
+            # Try relative path from current working directory
+            employees_file = os.path.join("backend", "employees.json")
+        
+        # Load employees.json
+        with open(employees_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # Build region mapping from employees
+        region_names = {
+            "BE": {"name": "Bangkok East", "thai": "กรุงเทพตะวันออก"},
+            "N": {"name": "North", "thai": "ภาคเหนือ"},
+            "S": {"name": "South", "thai": "ภาคใต้"},
+            "NE": {"name": "Northeast", "thai": "ภาคตะวันออกเฉียงเหนือ"},
+            "C": {"name": "Central", "thai": "ภาคกลาง"},
+        }
+        
+        regions = {}
+        
+        # Find RM for each region
+        for region_code, region_info in region_names.items():
+            # Find RM employee for this region
+            rm_employee = next(
+                (emp for emp in data.get("employees", []) 
+                 if emp.get("region") == region_code and emp.get("role") == "RM"),
+                None
+            )
+            
+            # Get branches for this region
+            branches = [branch for branch, reg in BRANCH_REGION_MAP.items() if reg == region_code]
+            
+            regions[region_code] = RegionInfo(
+                region_code=region_code,
+                region_name=region_info["name"],
+                region_name_thai=region_info["thai"],
+                rm_employee_id=rm_employee.get("employee_id") if rm_employee else None,
+                branches=sorted(branches)
+            )
+        
+        logger.info(f"✅ Successfully loaded region mapping with {len(regions)} regions")
+        return RegionMappingResponse(regions=regions)
+    
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Employees file not found")
+    except Exception as e:
+        logger.error(f"Error loading region mapping: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/regions/{region_code}", response_model=dict)
+async def update_region_manager(
+    region_code: str,
+    update_data: Dict[str, Any],
+    employee: dict = Depends(get_current_employee)
+):
+    """
+    Update Regional Manager employee_id for a specific region in employees.json.
+    Only accessible to admin users.
+    
+    This endpoint changes the employee_id of the current RM, not the role.
+    If the future RM replaces the current one, we update the employee_id field.
+    
+    Request body:
+    {
+        "rm_employee_id": "10027"
+    }
+    """
+    if not check_admin_role(employee):
+        raise HTTPException(status_code=403, detail="Only admin can update region config")
+    
+    try:
+        import json
+        # Fix: Ensure we're looking in the backend directory
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        employees_file = os.path.join(backend_dir, "employees.json")
+        
+        # If file doesn't exist in backend dir, it might be running from root
+        if not os.path.exists(employees_file):
+            # Try relative path from current working directory
+            employees_file = os.path.join("backend", "employees.json")
+        
+        logger.info(f"🔍 Updating region {region_code} with data: {update_data}")
+        logger.info(f"📂 Employees file path: {employees_file}")
+        logger.info(f"📂 Absolute path: {os.path.abspath(employees_file)}")
+        
+        # Load current employees
+        with open(employees_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        logger.info(f"📊 Loaded {len(data.get('employees', []))} employees from file")
+        
+        # Validate region code
+        valid_regions = ["BE", "N", "S", "NE", "C"]
+        if region_code not in valid_regions:
+            raise HTTPException(status_code=404, detail=f"Region {region_code} not found")
+        
+        # Get new RM employee ID
+        new_rm_id = update_data.get("rm_employee_id")
+        if not new_rm_id:
+            raise HTTPException(status_code=400, detail="rm_employee_id is required")
+        
+        logger.info(f"🎯 Target: Change RM employee_id to {new_rm_id} for region {region_code}")
+        
+        # Find current RM for this region
+        current_rm_index = None
+        old_rm_id = None
+        for idx, emp in enumerate(data.get("employees", [])):
+            if emp.get("region") == region_code and emp.get("role") == "RM":
+                current_rm_index = idx
+                old_rm_id = emp.get("employee_id")
+                break
+        
+        logger.info(f"🔍 Current RM for region {region_code}: {old_rm_id} at index {current_rm_index}")
+        
+        if old_rm_id == new_rm_id:
+            logger.info(f"ℹ️ No change needed - employee_id is already {new_rm_id}")
+            return {
+                "success": True,
+                "message": f"ไม่มีการเปลี่ยนแปลง - รหัสพนักงานเป็น {new_rm_id} อยู่แล้ว",
+                "region_code": region_code,
+                "old_rm_id": old_rm_id,
+                "new_rm_id": new_rm_id
+            }
+        
+        # Remove any duplicate employees with the new employee_id to avoid conflicts
+        employees_to_keep = []
+        removed_duplicates = []
+        for emp in data["employees"]:
+            if emp.get("employee_id") == new_rm_id:
+                removed_duplicates.append(emp)
+                logger.info(f"🗑️ Removing duplicate employee: {emp}")
+            else:
+                employees_to_keep.append(emp)
+        
+        data["employees"] = employees_to_keep
+        
+        # Now update the current RM's employee_id
+        if current_rm_index is not None:
+            # Find the RM again after removing duplicates
+            for emp in data["employees"]:
+                if emp.get("region") == region_code and emp.get("role") == "RM":
+                    emp["employee_id"] = new_rm_id
+                    logger.info(f"✏️ Updated RM employee_id from {old_rm_id} to {new_rm_id}")
+                    break
+        else:
+            # No current RM found, create a new one
+            from branch_region_mapping import BRANCH_REGION_MAP
+            first_branch = next(
+                (branch for branch, reg in BRANCH_REGION_MAP.items() if reg == region_code),
+                "90HO"
+            )
+            
+            new_employee = {
+                "employee_id": new_rm_id,
+                "branch": first_branch,
+                "region": region_code,
+                "role": "RM"
+            }
+            data["employees"].append(new_employee)
+            logger.info(f"➕ Created new RM {new_rm_id} for region {region_code} with branch {first_branch}")
+        
+        # Save to file
+        logger.info(f"💾 Saving changes to {employees_file}")
+        with open(employees_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"✅ Region {region_code} RM employee_id updated from {old_rm_id} to {new_rm_id} by {employee.get('employee_id')}")
+        
+        return {
+            "success": True,
+            "message": f"อัพเดทรหัสพนักงาน RM สำหรับภาค {region_code} สำเร็จ",
+            "region_code": region_code,
+            "old_rm_id": old_rm_id,
+            "new_rm_id": new_rm_id
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating region manager: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+

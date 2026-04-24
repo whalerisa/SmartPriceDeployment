@@ -14,6 +14,8 @@ function AdminConfig() {
   const [message, setMessage] = useState(null);
   const [availableRoles, setAvailableRoles] = useState([]);
   const [newRoleName, setNewRoleName] = useState("");
+  const [regionMapping, setRegionMapping] = useState(null);
+  const [editedRegionMapping, setEditedRegionMapping] = useState(null);
 
   // ตรวจสอบสิทธิ์ admin
   useEffect(() => {
@@ -45,6 +47,15 @@ function AdminConfig() {
       } catch (err) {
         console.error("Failed to load roles:", err);
         setAvailableRoles(["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"]);
+      }
+
+      // Load region mapping
+      try {
+        const regionRes = await api.get("/api/config/regions");
+        setRegionMapping(regionRes.data);
+        setEditedRegionMapping(JSON.parse(JSON.stringify(regionRes.data)));
+      } catch (err) {
+        console.error("Failed to load region mapping:", err);
       }
     } catch (err) {
       setMessage({
@@ -114,7 +125,44 @@ function AdminConfig() {
   const handleSave = async () => {
     try {
       setSaving(true);
+      
+      // Save main config
       await api.put("/api/config/settings", editedConfig);
+      
+      // Save region mapping changes
+      if (editedRegionMapping && regionMapping) {
+        const regionUpdates = [];
+        
+        Object.keys(editedRegionMapping.regions).forEach((regionCode) => {
+          const originalRM = regionMapping.regions[regionCode]?.rm_employee_id;
+          const editedRM = editedRegionMapping.regions[regionCode]?.rm_employee_id;
+          
+          console.log(`🔍 Region ${regionCode}: ${originalRM} → ${editedRM}`);
+          
+          if (originalRM !== editedRM) {
+            console.log(`📡 Updating region ${regionCode} RM to ${editedRM}`);
+            regionUpdates.push(
+              api.put(`/api/config/regions/${regionCode}`, {
+                rm_employee_id: editedRM,
+              })
+            );
+          }
+        });
+        
+        if (regionUpdates.length > 0) {
+          console.log(`📡 Sending ${regionUpdates.length} region updates...`);
+          try {
+            const results = await Promise.all(regionUpdates);
+            console.log("✅ All region updates completed:", results);
+          } catch (regionError) {
+            console.error("❌ Region update failed:", regionError);
+            throw new Error(`Failed to update regions: ${regionError.response?.data?.detail || regionError.message}`);
+          }
+        } else {
+          console.log("ℹ️ No region changes to save");
+        }
+      }
+      
       await loadConfig();
       
       setMessage({
@@ -134,6 +182,7 @@ function AdminConfig() {
 
   const handleReset = () => {
     setEditedConfig(JSON.parse(JSON.stringify(config)));
+    setEditedRegionMapping(JSON.parse(JSON.stringify(regionMapping)));
     setMessage(null);
   };
 
@@ -205,6 +254,16 @@ function AdminConfig() {
               }`}
             >
               🔐 สิทธิ์การเข้าถึง
+            </button>
+            <button
+              onClick={() => setActiveTab("regions")}
+              className={`px-6 py-4 font-medium transition-colors ${
+                activeTab === "regions"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              🗺️ จัดการภาค
             </button>
             <button
               onClick={() => setActiveTab("system")}
@@ -749,6 +808,84 @@ function AdminConfig() {
                       ))}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Region Management Tab */}
+            {activeTab === "regions" && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">🗺️ จัดการผู้ดูแลภาค (Regional Manager)</h3>
+                <p className="text-sm text-gray-600 mb-6">
+                  กำหนดรหัสพนักงานที่เป็น Regional Manager (RM) ของแต่ละภาค
+                </p>
+
+                {editedRegionMapping && editedRegionMapping.regions ? (
+                  <div className="space-y-4">
+                    {Object.entries(editedRegionMapping.regions).map(([regionCode, regionData]) => (
+                      <div key={regionCode} className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h4 className="font-semibold text-gray-900 text-lg">
+                              {regionData.region_name_thai} ({regionData.region_name})
+                            </h4>
+                            <p className="text-xs text-gray-500 mt-1">
+                              รหัสภาค: {regionCode}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              สาขาในภาค: {regionData.branches.join(", ")}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                            รหัสพนักงาน RM:
+                          </label>
+                          <input
+                            type="text"
+                            value={regionData.rm_employee_id || ""}
+                            onChange={(e) => {
+                              const newValue = e.target.value;
+                              setEditedRegionMapping({
+                                ...editedRegionMapping,
+                                regions: {
+                                  ...editedRegionMapping.regions,
+                                  [regionCode]: {
+                                    ...regionData,
+                                    rm_employee_id: newValue,
+                                  },
+                                },
+                              });
+                            }}
+                            placeholder="เช่น 10027"
+                            className="flex-1 max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                          />
+                        </div>
+
+                        {regionMapping && 
+                         regionMapping.regions[regionCode]?.rm_employee_id !== regionData.rm_employee_id && (
+                          <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+                            ⚠️ มีการเปลี่ยนแปลง: {regionMapping.regions[regionCode]?.rm_employee_id} → {regionData.rm_employee_id}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">
+                    <p>ไม่พบข้อมูลการจัดการภาค</p>
+                  </div>
+                )}
+
+                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-semibold text-blue-900 mb-2">💡 คำแนะนำ</h4>
+                  <ul className="text-xs text-gray-700 space-y-1 list-disc list-inside">
+                    <li>กรอกรหัสพนักงานที่เป็น Regional Manager ของแต่ละภาค</li>
+                    <li>ระบบจะใช้ข้อมูลนี้ในการกำหนดสิทธิ์การอนุมัติและการเข้าถึงข้อมูล</li>
+                    <li>หากมีการเปลี่ยนตัว RM ให้แก้ไขรหัสพนักงานที่นี่</li>
+                    <li>อย่าลืมกดปุ่ม "บันทึก" ด้านล่างเพื่อบันทึกการเปลี่ยนแปลง</li>
+                  </ul>
                 </div>
               </div>
             )}
