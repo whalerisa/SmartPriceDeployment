@@ -614,6 +614,29 @@ const ProjectPriceManagement = () => {
     alert(`เพิ่มรายการสินค้า (${matchedSkus.length} SKUs) เรียบร้อยแล้ว`);
   };
 
+  // ⭐ อัปโหลดไฟล์โครงการ (เก็บที่ folder เฉยๆ ไม่บันทึก path)
+  const handleFileUpload = async (projectId) => {
+    if (!selectedFile) return;
+
+    try {
+      setUploadingFile(true);
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+
+      await api.post(`/api/project-files/upload/${projectId}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      console.log('✅ File uploaded successfully');
+    } catch (err) {
+      console.error('❌ Error uploading file:', err);
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -682,12 +705,25 @@ const ProjectPriceManagement = () => {
       if (editingProjectId) {
         // Update existing project
         await api.put(`/api/project-prices/${editingProjectId}`, payload);
+        
+        // ⭐ อัปโหลดไฟล์ถ้ามี (เก็บที่ folder เฉยๆ ไม่บันทึก path)
+        if (selectedFile) {
+          await handleFileUpload(editingProjectId);
+        }
+        
         alert('อัพเดทราคาโครงการเรียบร้อยแล้ว');
         setEditingProjectId(null);
       } else {
         // Create new project - เลขที่จะถูกสร้างโดย backend
         const response = await api.post('/api/project-prices/', payload);
         const generatedCode = response.data?.project_code || 'สร้างสำเร็จ';
+        const projectId = response.data?.project_id;
+        
+        // ⭐ อัปโหลดไฟล์ถ้ามี (เก็บที่ folder เฉยๆ ไม่บันทึก path)
+        if (selectedFile && projectId) {
+          await handleFileUpload(projectId);
+        }
+        
         alert(`บันทึกราคาโครงการเรียบร้อยแล้ว\nเลขที่ใบคำขอ: ${generatedCode}`);
       }
       

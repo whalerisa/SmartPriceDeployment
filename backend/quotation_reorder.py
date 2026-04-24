@@ -1,6 +1,8 @@
 # Reorder endpoint for quotation.py
 # This file contains the reorder logic that should be added to quotation.py
 
+#ดูว่าเอกสารใบเสนอราคาเวลาซื้อซ้ำหมดอายุหรือยัง
+
 async def reorder_quotation_new(quote_no: str, branch_code: str):
     """
     ซื้อซ้ำจากใบเสนอราคา - คำนวณราคาใหม่ถ้าหมดอายุ
