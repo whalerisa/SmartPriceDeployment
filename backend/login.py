@@ -212,9 +212,15 @@ async def init_from_uxp(request: Request, response: Response):
             emp["branchId"] = sorted_branches[0]  # ใช้สาขาแรก (หลังเรียงลำดับ) เป็น primary
             print(f"✅ Updated branches from UXP token: {sorted_branches}")
         
-        # ถ้ามีหลายสาขา ให้ส่งกลับเพื่อให้ผู้ใช้เลือก
-        if emp.get("branches") and len(emp["branches"]) > 1:
-            print(f"✅ Employee {emp_code} has {len(emp['branches'])} branches, returning for selection")
+        # ⭐ ถ้ามีสาขา 90HO และ 00TR ให้ใช้ 00TR โดยอัตโนมัติ
+        branches = emp.get("branches", [])
+        if "90HO" in branches and "00TR" in branches:
+            print(f"✅ Employee {emp_code} has 90HO and 00TR, auto-selecting 00TR")
+            emp["branchId"] = "00TR"
+            # ไม่ต้อง return เพื่อให้ผ่านไปสร้าง token ด้านล่าง
+        elif len(branches) > 1:
+            # ถ้ามีหลายสาขาแต่ไม่ใช่กรณี 90HO+00TR ให้ส่งกลับเพื่อให้ผู้ใช้เลือก
+            print(f"✅ Employee {emp_code} has {len(branches)} branches, returning for selection")
             return {
                 "token": None,
                 "employee": {

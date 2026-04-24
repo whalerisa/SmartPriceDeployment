@@ -853,52 +853,6 @@ function AdminConfig() {
                     </p>
                   </div>
 
-                  {/* Timezone */}
-                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
-                    <div className="mb-4">
-                      <h4 className="font-semibold text-gray-900">🌍 เขตเวลา</h4>
-                      <p className="text-xs text-gray-500">ใช้สำหรับแสดงเวลาในระบบ</p>
-                    </div>
-                    <input
-                      type="text"
-                      value={editedConfig?.system_config?.timezone || "Asia/Bangkok"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          system_config: {
-                            ...editedConfig.system_config,
-                            timezone: e.target.value,
-                          },
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* Language */}
-                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
-                    <div className="mb-4">
-                      <h4 className="font-semibold text-gray-900">🗣️ ภาษา</h4>
-                      <p className="text-xs text-gray-500">ภาษาที่ใช้ในระบบ</p>
-                    </div>
-                    <select
-                      value={editedConfig?.system_config?.language || "th"}
-                      onChange={(e) =>
-                        setEditedConfig({
-                          ...editedConfig,
-                          system_config: {
-                            ...editedConfig.system_config,
-                            language: e.target.value,
-                          },
-                        })
-                      }
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="th">ไทย (Thai)</option>
-                      <option value="en">English</option>
-                    </select>
-                  </div>
-
                   {/* File Storage Settings */}
                   <div className="border-t border-gray-300 pt-6 mt-6">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">📁 การจัดเก็บไฟล์</h3>
