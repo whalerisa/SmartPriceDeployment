@@ -227,12 +227,6 @@
       "branch": "90HO",
       "region": "ALL",
       "role": "Sales_Project"
-    },
-    {
-      "employee_id": "21747",
-      "branch": "00TR",
-      "region": "BE",
-      "role": "ZM"
     }
   ]
 }
