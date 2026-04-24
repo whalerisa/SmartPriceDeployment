@@ -23,7 +23,6 @@
     "page_label": "สร้างรหัสโครงการ",
     "allowed_roles": [
       "Admin",
-      "ZM",
       "Sales_Project",
       "RM",
       "PM",
@@ -34,7 +33,8 @@
       "PM_GYPSUM",
       "PM_SEALANT",
       "CEO",
-      "SDM"
+      "SDM",
+      "ZM"
     ]
   },
   "special_price_approval": {
