@@ -32,6 +32,7 @@ class ManualLoginRequest(BaseModel):
 async def load_employee(code: str):
     """
     ดึงข้อมูลพนักงานจาก API และเพิ่มข้อมูล role จาก employees.json
+    รองรับพนักงานที่มีหลายสาขา
     """
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -53,35 +54,68 @@ async def load_employee(code: str):
             print(f"🔍 [LOAD_EMPLOYEE] Looking for employee code: {code}")
             print(f"   Total employees from API: {len(employees)}")
             
-            # หาพนักงานที่ตรงกับ code
+            # หาพนักงานที่ตรงกับ code (อาจมีหลายรายการสำหรับสาขาต่างๆ)
+            matching_employees = []
             for emp in employees:
                 emp_code = str(emp.get("EmpCode", "")).strip()
                 if emp_code.lower() == code.lower():
-                    emp_name = str(emp.get("EmpName", "")).strip()
-                    emp_brch = str(emp.get("EmpBrchCode", "")).strip() or None
-                    
-                    print(f"   ✅ Found employee:")
-                    print(f"      Code: {emp_code}")
-                    print(f"      Name: {emp_name}")
-                    print(f"      Branch: {emp_brch}")
-                    print(f"      Full emp object: {emp}")
-                    
-                    emp_data = {
-                        "id": emp_code,
-                        "name": emp_name,
-                        "branchId": emp_brch,
-                    }
-                    
-                    # เพิ่มข้อมูล role และ region จาก employees.json
-                    role_info = get_employee_role(emp_code)
-                    if role_info:
-                        emp_data["role"] = role_info.get("role")
-                        emp_data["region"] = role_info.get("region")
-                    
-                    return emp_data
+                    matching_employees.append(emp)
             
-            print(f"   ❌ Employee code {code} not found in API response")
-            return None
+            if not matching_employees:
+                print(f"   ❌ Employee code {code} not found in API response")
+                return None
+            
+            # ใช้ record แรก เพื่อดึงข้อมูลพื้นฐาน
+            first_emp = matching_employees[0]
+            emp_name = str(first_emp.get("EmpName", "")).strip()
+            
+            print(f"   ✅ Found {len(matching_employees)} record(s) for employee:")
+            print(f"      Code: {code}")
+            print(f"      Name: {emp_name}")
+            
+            # เก็บสาขาทั้งหมด
+            branches = []
+            for emp in matching_employees:
+                emp_brch = str(emp.get("EmpBrchCode", "")).strip()
+                if emp_brch:
+                    branches.append(emp_brch)
+                    print(f"      Branch: {emp_brch}")
+            
+            # ถ้าไม่มีสาขา ให้ใช้ default
+            if not branches:
+                branches = [None]
+            
+            # ⭐ ลำดับความสำคัญของสาขา: 00TR > 90HO > อื่นๆ
+            # ให้ 00TR อยู่ด้านหน้า (primary) ถ้ามี
+            priority_order = ["00TR", "90HO"]
+            sorted_branches = []
+            
+            # เพิ่มสาขาตามลำดับความสำคัญ
+            for priority_branch in priority_order:
+                if priority_branch in branches:
+                    sorted_branches.append(priority_branch)
+                    branches.remove(priority_branch)
+            
+            # เพิ่มสาขาที่เหลือ
+            sorted_branches.extend(branches)
+            branches = sorted_branches
+            
+            print(f"      Sorted branches (priority: 00TR > 90HO): {branches}")
+            
+            emp_data = {
+                "id": code,
+                "name": emp_name,
+                "branchId": branches[0],  # ใช้สาขาแรกเป็น primary
+                "branches": branches,     # เก็บสาขาทั้งหมด
+            }
+            
+            # เพิ่มข้อมูล role และ region จาก employees.json
+            role_info = get_employee_role(code)
+            if role_info:
+                emp_data["role"] = role_info.get("role")
+                emp_data["region"] = role_info.get("region")
+            
+            return emp_data
             
     except Exception as e:
         print(f"❌ Error fetching employee from API: {e}")
@@ -149,18 +183,59 @@ async def init_from_uxp(request: Request, response: Response):
         if not emp_code:
             raise HTTPException(status_code=400, detail="ไม่พบรหัสพนักงานใน UXP token")
         
+        # ⭐ ดึง branches จาก UXP token
+        uxp_branches = payload.get("branches", [])
+        print(f"✅ Branches from UXP token: {uxp_branches}")
+        
         # ดึงข้อมูลพนักงานจาก API
         emp = await load_employee(str(emp_code))
         if not emp:
             raise HTTPException(status_code=401, detail=f"ไม่พบข้อมูลพนักงาน: {emp_code}")
         
-        # สร้าง auth_token ของ Smart Pricing
+        # ⭐ ถ้า UXP token มี branches ให้ใช้แทน (และเรียงลำดับความสำคัญ)
+        if uxp_branches:
+            # ลำดับความสำคัญของสาขา: 00TR > 90HO > อื่นๆ
+            priority_order = ["00TR", "90HO"]
+            sorted_branches = []
+            
+            # เพิ่มสาขาตามลำดับความสำคัญ
+            remaining_branches = list(uxp_branches)
+            for priority_branch in priority_order:
+                if priority_branch in remaining_branches:
+                    sorted_branches.append(priority_branch)
+                    remaining_branches.remove(priority_branch)
+            
+            # เพิ่มสาขาที่เหลือ
+            sorted_branches.extend(remaining_branches)
+            
+            emp["branches"] = sorted_branches
+            emp["branchId"] = sorted_branches[0]  # ใช้สาขาแรก (หลังเรียงลำดับ) เป็น primary
+            print(f"✅ Updated branches from UXP token: {sorted_branches}")
+        
+        # ถ้ามีหลายสาขา ให้ส่งกลับเพื่อให้ผู้ใช้เลือก
+        if emp.get("branches") and len(emp["branches"]) > 1:
+            print(f"✅ Employee {emp_code} has {len(emp['branches'])} branches, returning for selection")
+            return {
+                "token": None,
+                "employee": {
+                    "id": emp["id"],
+                    "name": emp["name"],
+                    "branchId": emp["branchId"],
+                    "branches": emp["branches"],
+                }
+            }
+        
+        # ถ้ามีเพียงสาขาเดียว ให้สร้าง token เลย
         token_payload = {
             "sub": emp["id"],
             "name": emp["name"],
             "branchId": emp["branchId"],
             "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
         }
+        
+        # ⭐ เพิ่ม branches ลงใน token
+        if emp.get("branches"):
+            token_payload["branches"] = emp["branches"]
         
         # เพิ่ม role และ region จาก UXP token ก่อน (ถ้ามี)
         uxp_roles = payload.get("roles") or payload.get("role")
@@ -222,6 +297,83 @@ async def init_from_uxp(request: Request, response: Response):
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
 
 
+# === SELECT BRANCH ROUTE (เลือกสาขาเมื่อพนักงานมีหลายสาขา) ===
+@router.post("/select-branch")
+async def select_branch(request: Request, response: Response):
+    """
+    สร้าง auth_token ด้วยสาขาที่ผู้ใช้เลือก
+    """
+    try:
+        body = await request.json()
+        emp_code = body.get("employeeCode")
+        selected_branch = body.get("branchId")
+        
+        if not emp_code or not selected_branch:
+            raise HTTPException(status_code=400, detail="ต้องระบุ employeeCode และ branchId")
+        
+        # ดึงข้อมูลพนักงาน
+        emp = await load_employee(emp_code)
+        if not emp:
+            raise HTTPException(status_code=401, detail=f"ไม่พบข้อมูลพนักงาน: {emp_code}")
+        
+        # ตรวจสอบว่าสาขาที่เลือกอยู่ในรายการสาขาของพนักงาน
+        if selected_branch not in emp.get("branches", []):
+            raise HTTPException(status_code=400, detail=f"สาขา {selected_branch} ไม่ใช่สาขาของพนักงาน")
+        
+        # สร้าง token payload
+        token_payload = {
+            "sub": emp["id"],
+            "name": emp["name"],
+            "branchId": selected_branch,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
+        }
+        
+        # ⭐ เพิ่ม branches ลงใน token
+        if emp.get("branches"):
+            token_payload["branches"] = emp["branches"]
+        
+        # เพิ่ม role และ region ถ้ามี
+        if emp.get("role"):
+            token_payload["role"] = emp["role"]
+        if emp.get("region"):
+            token_payload["region"] = emp["region"]
+        
+        # สร้าง JWT token
+        token = jwt.encode(
+            token_payload,
+            JWT_SECRET,
+            algorithm=JWT_ALG,
+        )
+        
+        # สร้าง HttpOnly cookie
+        response.set_cookie(
+            key="auth_token",
+            value=token,
+            httponly=True,
+            secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+            samesite="lax",
+            max_age=JWT_EXPIRE_HOURS * 3600,
+            path="/",
+        )
+        
+        return {
+            "token": token,
+            "employee": {
+                "id": emp["id"],
+                "name": emp["name"],
+                "branchId": selected_branch,
+                "role": emp.get("role"),
+                "region": emp.get("region"),
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in select_branch: {e}")
+        raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
+
+
 # === LOGIN ROUTE ===
 @router.post("")
 async def login(req: LoginRequest):
@@ -235,6 +387,10 @@ async def login(req: LoginRequest):
         "branchId": emp["branchId"],
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
     }
+    
+    # ⭐ เพิ่ม branches ลงใน token
+    if emp.get("branches"):
+        token_payload["branches"] = emp["branches"]
     
     # เพิ่ม role และ region ถ้ามี
     if emp.get("role"):
@@ -301,6 +457,10 @@ async def manual_login(req: ManualLoginRequest, response: Response):
         "region": region,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
     }
+    
+    # ⭐ เพิ่ม branches ลงใน token (ถ้ามี)
+    if emp.get("branches"):
+        token_payload["branches"] = emp["branches"]
     
     # สร้าง JWT token
     token = jwt.encode(

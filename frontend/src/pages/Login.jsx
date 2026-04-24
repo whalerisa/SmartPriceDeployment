@@ -1,21 +1,21 @@
 // src/pages/Login.jsx
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 
 function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState("uxp"); // "uxp" หรือ "manual"
+  const [loginMode, setLoginMode] = useState("uxp"); // "uxp", "manual", หรือ "selectBranch"
   const [formData, setFormData] = useState({
     employeeCode: "",
     role: "",
     branchId: "",
     password: "",
+    branches: [],
+    selectedBranch: "",
   });
   const [roles, setRoles] = useState([]);
   const [branches, setBranches] = useState([]);
-  const navigate = useNavigate();
 
   // ดึงข้อมูล roles และ branches เมื่อเปลี่ยนเป็น manual mode
   useEffect(() => {
@@ -44,9 +44,22 @@ function Login() {
     try {
       // เรียก Backend ให้อ่าน UXP cookie และสร้าง auth_token
       const response = await api.post("/api/login/init");
-      console.log("Login success:", response.data);
+      console.log("Login response:", response.data);
 
-      // Reload หน้าเพื่อให้ AuthContext อ่าน cookie ใหม่
+      // ถ้าพนักงานมีหลายสาขา ให้เลือกสาขา
+      if (response.data.employee?.branches && response.data.employee.branches.length > 1) {
+        setFormData(prev => ({
+          ...prev,
+          employeeCode: response.data.employee.id,
+          branches: response.data.employee.branches,
+          selectedBranch: response.data.employee.branchId,
+        }));
+        setLoginMode("selectBranch");
+        setLoading(false);
+        return;
+      }
+
+      // ถ้ามีเพียงสาขาเดียว ให้เข้าสู่ระบบเลย
       window.location.href = "/dashboard";
     } catch (err) {
       console.error("Login error:", err);
@@ -76,6 +89,34 @@ function Login() {
     } catch (err) {
       console.error("Manual login error:", err);
       setError(err.response?.data?.detail || "ไม่สามารถเข้าสู่ระบบได้");
+      setLoading(false);
+    }
+  };
+
+  const handleSelectBranch = async (e) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    if (!formData.selectedBranch) {
+      setError("กรุณาเลือกสาขา");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // เรียก Backend เพื่อสร้าง auth_token ด้วยสาขาที่เลือก
+      const response = await api.post("/api/login/select-branch", {
+        employeeCode: formData.employeeCode,
+        branchId: formData.selectedBranch,
+      });
+      console.log("Branch selection success:", response.data);
+
+      // Reload หน้าเพื่อให้ AuthContext อ่าน cookie ใหม่
+      window.location.href = "/dashboard";
+    } catch (err) {
+      console.error("Branch selection error:", err);
+      setError(err.response?.data?.detail || "ไม่สามารถเลือกสาขาได้");
       setLoading(false);
     }
   };
@@ -159,6 +200,59 @@ function Login() {
               กดปุ่มเริ่มใช้งานเพื่อเข้าสู่ระบบ
             </p>
           </>
+        ) : loginMode === "selectBranch" ? (
+          // Select Branch Mode
+          <form onSubmit={handleSelectBranch} className="space-y-4">
+            <div>
+              <label htmlFor="selectedBranch" className="block text-sm font-medium text-gray-700 mb-2">
+                เลือกสาขา
+              </label>
+              <select
+                id="selectedBranch"
+                value={formData.selectedBranch}
+                onChange={(e) => setFormData(prev => ({ ...prev, selectedBranch: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                disabled={loading}
+              >
+                <option value="">เลือกสาขา</option>
+                {formData.branches?.map((branch) => (
+                  <option key={branch} value={branch}>
+                    {branch}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 py-4 font-bold text-white text-lg shadow-lg transition-all duration-300 hover:from-blue-600 hover:to-blue-700 hover:shadow-xl hover:scale-[1.02] focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  กำลังเข้าสู่ระบบ...
+                </span>
+              ) : (
+                "ยืนยัน"
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMode("uxp");
+                setFormData(prev => ({ ...prev, branches: [], selectedBranch: "" }));
+              }}
+              className="w-full mt-2 py-2 px-4 text-gray-600 hover:text-gray-800 font-medium"
+              disabled={loading}
+            >
+              ย้อนกลับ
+            </button>
+          </form>
         ) : (
           // Manual Login Mode
           <form onSubmit={handleManualLogin} className="space-y-4">

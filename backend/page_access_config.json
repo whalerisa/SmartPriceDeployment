@@ -14,7 +14,8 @@
       "PM_EQUIPMENT",
       "PM_GLASS",
       "PM_GYPSUM",
-      "PM_SEALANT"
+      "PM_SEALANT",
+      "CEO"
     ]
   },
   "project_price": {
@@ -24,7 +25,16 @@
       "Admin",
       "ZM",
       "Sales_Project",
-      "RM"
+      "RM",
+      "PM",
+      "PM_ALUMINIUM",
+      "PM_CLINE",
+      "PM_EQUIPMENT",
+      "PM_GLASS",
+      "PM_GYPSUM",
+      "PM_SEALANT",
+      "CEO",
+      "SDM"
     ]
   },
   "special_price_approval": {
@@ -41,7 +51,8 @@
       "PM_EQUIPMENT",
       "PM_GLASS",
       "PM_GYPSUM",
-      "PM_SEALANT"
+      "PM_SEALANT",
+      "CEO"
     ]
   },
   "update_price": {
@@ -49,7 +60,13 @@
     "page_label": "เพิ่มราคา",
     "allowed_roles": [
       "PM",
-      "Admin"
+      "Admin",
+      "PM_ALUMINIUM",
+      "PM_CLINE",
+      "PM_EQUIPMENT",
+      "PM_GLASS",
+      "PM_GYPSUM",
+      "PM_SEALANT"
     ]
   }
 }

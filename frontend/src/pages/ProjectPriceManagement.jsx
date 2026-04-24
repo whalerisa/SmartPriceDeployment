@@ -670,8 +670,8 @@ const ProjectPriceManagement = () => {
       
       const payload = {
         ...formData,
-        // ⭐ ถ้าเป็นโหมดลูกค้าพิเศษ ไม่ต้องส่ง project_name (ส่งเป็น empty string)
-        project_name: priceMode === 'customer' ? '' : formData.project_name,
+        // ✅ ส่ง project_name เสมอ (สำหรับโหมด customer คือ ชื่อแคมเปญ)
+        project_name: formData.project_name,
         // ✅ เพิ่ม employee code
         created_by_employee_code: employee?.id,
         // ⭐ เพิ่ม price_mode flag
@@ -1327,7 +1327,7 @@ const ProjectPriceManagement = () => {
                 </div>
               </div>
             ) : priceMode === 'customer' ? (
-              // ฟอร์มสำหรับโหมดลูกค้าพิเศษ - ไม่มีชื่อโครงการ
+              // ฟอร์มสำหรับโหมดลูกค้าพิเศษ - มีชื่อแคมเปญแทนชื่อโครงการ
               <div className="grid grid-cols-3 gap-4">
                 {/* Project Code Input (Manual Mode Only) */}
                 {projectCodeMode === 'manual' && (
@@ -1348,6 +1348,20 @@ const ProjectPriceManagement = () => {
                     </p>
                   </div>
                 )}
+                
+                <div className="col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ชื่อแคมเปญ <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.project_name}
+                    onChange={(e) => setFormData({...formData, project_name: e.target.value})}
+                    className="w-full border rounded-lg px-3 py-2"
+                    placeholder="เช่น แคมเปญฤดูร้อน"
+                  />
+                </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
