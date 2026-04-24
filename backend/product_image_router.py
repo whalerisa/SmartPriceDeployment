@@ -4,11 +4,12 @@ from fastapi.responses import FileResponse
 import os
 import shutil
 from pathlib import Path
+from file_storage_config import get_product_images_folder
 
 router = APIRouter(prefix="/api/product-images", tags=["Product Images"])
 
-# โฟลเดอร์เก็บรูปภาพสินค้า
-IMAGES_DIR = Path("static/product-images")
+# โฟลเดอร์เก็บรูปภาพสินค้า (ใช้ config)
+IMAGES_DIR = Path(get_product_images_folder())
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 # รองรับไฟล์ประเภทนี้

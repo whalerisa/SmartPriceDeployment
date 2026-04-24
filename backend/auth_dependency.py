@@ -32,7 +32,7 @@ def get_branch_code(request: Request, authorization: str = Header(None)) -> str:
         # Decode JWT token
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
         
-        # Get branchId from payload
+        #ดึงรหัสสาขาจาก jwt token
         branch_id = payload.get("branchId")
         
         if not branch_id:

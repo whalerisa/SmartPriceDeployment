@@ -69,20 +69,6 @@ async def resolve_approver_position(position_id: str) -> Optional[Dict]:
         return await find_sdm()
     return None
 
-async def get_all_zms() -> list:
-    """Get all Zone Managers (not implemented for API-based approach)"""
-    # Note: This would require querying all branches
-    # For now, return empty list or implement if needed
-    logger.warning("get_all_zms() not implemented for API-based approach")
-    return []
-
-async def get_all_rms() -> list:
-    """Get all Regional Managers (not implemented for API-based approach)"""
-    # Note: This would require querying all regions
-    # For now, return empty list or implement if needed
-    logger.warning("get_all_rms() not implemented for API-based approach")
-    return []
-
 
 async def find_pm() -> Optional[Dict]:
     """Find Product Manager"""

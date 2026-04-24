@@ -79,6 +79,8 @@ class SystemConfig(BaseModel):
     version: str = "1.0.0"
     vat_rate: float = 0.07  # ⭐ VAT rate (default 7%)
     project_code_mode: str = "auto"  # ⭐ Project code mode: "auto" (running number) or "manual" (user input)
+    project_files_folder: str = "./uploads/project_files"  # ⭐ Folder for project files
+    product_images_folder: str = "./uploads/product_images"  # ⭐ Folder for product images
 
 
 class ConfigResponse(BaseModel):
@@ -232,6 +234,8 @@ async def get_config(employee: dict = Depends(get_current_employee)):
             vat_rate = 0.07
         
         project_code_mode = os.getenv("PROJECT_CODE_MODE", "auto")
+        project_files_folder = os.getenv("PROJECT_FILES_FOLDER", "./uploads/project_files")
+        product_images_folder = os.getenv("PRODUCT_IMAGES_FOLDER", "./uploads/product_images")
         
         system_config = SystemConfig(
             base_url=BASE_URL,
@@ -239,7 +243,9 @@ async def get_config(employee: dict = Depends(get_current_employee)):
             language=os.getenv("LANGUAGE", "th"),
             version=os.getenv("APP_VERSION", "1.0.0"),
             vat_rate=vat_rate,
-            project_code_mode=project_code_mode
+            project_code_mode=project_code_mode,
+            project_files_folder=project_files_folder,
+            product_images_folder=product_images_folder
         )
         
         return ConfigResponse(
@@ -407,6 +413,10 @@ async def update_config(
                 os.environ["VAT_RATE"] = str(sys_cfg["vat_rate"])
             if "project_code_mode" in sys_cfg:
                 os.environ["PROJECT_CODE_MODE"] = sys_cfg["project_code_mode"]
+            if "project_files_folder" in sys_cfg:
+                os.environ["PROJECT_FILES_FOLDER"] = sys_cfg["project_files_folder"]
+            if "product_images_folder" in sys_cfg:
+                os.environ["PRODUCT_IMAGES_FOLDER"] = sys_cfg["product_images_folder"]
         
         logger.info(f"Config updated by {employee.get('employee_id')}")
         

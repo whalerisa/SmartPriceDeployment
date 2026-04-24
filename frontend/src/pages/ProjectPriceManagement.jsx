@@ -1359,7 +1359,7 @@ const ProjectPriceManagement = () => {
                     value={formData.project_name}
                     onChange={(e) => setFormData({...formData, project_name: e.target.value})}
                     className="w-full border rounded-lg px-3 py-2"
-                    placeholder="เช่น แคมเปญฤดูร้อน"
+                    placeholder="เช่น EFC"
                   />
                 </div>
                 

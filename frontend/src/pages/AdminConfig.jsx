@@ -876,7 +876,7 @@ function AdminConfig() {
                   </div>
 
                   {/* Language */}
-                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                  <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
                     <div className="mb-4">
                       <h4 className="font-semibold text-gray-900">🗣️ ภาษา</h4>
                       <p className="text-xs text-gray-500">ภาษาที่ใช้ในระบบ</p>
@@ -897,6 +897,66 @@ function AdminConfig() {
                       <option value="th">ไทย (Thai)</option>
                       <option value="en">English</option>
                     </select>
+                  </div>
+
+                  {/* File Storage Settings */}
+                  <div className="border-t border-gray-300 pt-6 mt-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">📁 การจัดเก็บไฟล์</h3>
+                    <p className="text-sm text-gray-600 mb-6">
+                      กำหนดตำแหน่งโฟลเดอร์สำหรับเก็บไฟล์ต่างๆ ในระบบ
+                    </p>
+
+                    {/* Project Files Folder */}
+                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
+                      <div className="mb-4">
+                        <h4 className="font-semibold text-gray-900">📂 โฟลเดอร์ไฟล์โครงการ</h4>
+                        <p className="text-xs text-gray-500">ที่เก็บไฟล์แนบของโครงการ (Project Files)</p>
+                      </div>
+                      <input
+                        type="text"
+                        value={editedConfig?.system_config?.project_files_folder || "./uploads/project_files"}
+                        onChange={(e) =>
+                          setEditedConfig({
+                            ...editedConfig,
+                            system_config: {
+                              ...editedConfig.system_config,
+                              project_files_folder: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="เช่น ./uploads/project_files หรือ C:/data/projects"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        💡 ใช้ path แบบ relative (./) หรือ absolute (C:/) ก็ได้
+                      </p>
+                    </div>
+
+                    {/* Product Images Folder */}
+                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                      <div className="mb-4">
+                        <h4 className="font-semibold text-gray-900">🖼️ โฟลเดอร์รูปภาพสินค้า</h4>
+                        <p className="text-xs text-gray-500">ที่เก็บรูปภาพของสินค้า (Product Images)</p>
+                      </div>
+                      <input
+                        type="text"
+                        value={editedConfig?.system_config?.product_images_folder || "./uploads/product_images"}
+                        onChange={(e) =>
+                          setEditedConfig({
+                            ...editedConfig,
+                            system_config: {
+                              ...editedConfig.system_config,
+                              product_images_folder: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="เช่น ./uploads/product_images หรือ C:/data/images"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        💡 ใช้ path แบบ relative (./) หรือ absolute (C:/) ก็ได้
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

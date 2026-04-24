@@ -60,7 +60,7 @@ BRANCH_REGION_MAP = {
 }
 
 
-def get_region_from_branch(branch_code: str) -> str:
+def get_region_from_branch(branch_code: str) -> str: #แปลงรหัสสาขาเป็นภูมิภาค
     """
     Get region code from branch code.
     
@@ -130,7 +130,7 @@ def load_branch_mapping_from_employees_json(file_path: str = "employees.json") -
         return {}
 
 
-def get_all_branches_by_region(region: str) -> list:
+def get_all_branches_by_region(region: str) -> list: #ดึงรายชื่อสาขาทั้งหมดในภูมิภาคเดียวกัน/ให้ Regional Manager (RM) เห็นใบเสนอราคาทุกสาขาในภูมิภาคของตน
     """
     Get all branch codes for a specific region.
     

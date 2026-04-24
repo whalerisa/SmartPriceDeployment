@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/branches", tags=["branches"])
 
 
-@router.get("")
+@router.get("") #ดึงชื่อสาขาทั้งหมด
 def get_branches():
     """
     Get all branches from MSSQL Branch table.
@@ -49,49 +49,6 @@ def get_branches():
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch branches: {str(e)}"
-        )
-    
-    finally:
-        if conn:
-            conn.close()
-
-
-@router.get("/{code}")
-def get_branch_by_code(code: str):
-    """
-    Get specific branch by code.
-    
-    Args:
-        code: Branch code
-    
-    Returns:
-        Branch with Code and Name
-    """
-    conn = None
-    try:
-        conn = get_mssql_conn()
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT Code, Name FROM Branch WHERE Code = ?", (code,))
-        row = cursor.fetchone()
-        
-        cursor.close()
-        
-        if not row:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Branch with code '{code}' not found"
-            )
-        
-        return {"Code": row[0], "Name": row[1]}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to fetch branch {code}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch branch: {str(e)}"
         )
     
     finally:

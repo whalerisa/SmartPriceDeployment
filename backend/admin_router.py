@@ -38,7 +38,7 @@ class UploadResponse(BaseModel):
     error_details: list[str]
 
 
-@router.post("/prices/upload", response_model=UploadResponse)
+@router.post("/prices/upload", response_model=UploadResponse) #Upload Excel ราคา
 async def upload_prices(
     file: UploadFile = File(...),
     branch_code: str = QueryParam(..., description="Branch code(s) for price data (comma-separated)")
@@ -177,7 +177,7 @@ class EmployeeAccessResponse(BaseModel):
     allowed_project_price_employees: list[str]
 
 
-@router.get("/employee-access", response_model=EmployeeAccessResponse)
+@router.get("/employee-access", response_model=EmployeeAccessResponse) #ดึงรายชื่อพนักงานที่มีสิทธิ์เข้าถึงฟีเจอร์บางอย่าง
 def get_employee_access():
     """
     Get employee access control lists from environment variables.

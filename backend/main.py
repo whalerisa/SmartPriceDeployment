@@ -19,7 +19,6 @@ from customer_analytics import router as customer_analytics_router
 from api.router_sq import router as sq_router
 from products_router import api_router
 from cache_refresh_router import router as cache_refresh_router
-from item_master_router import router as item_master_router
 from admin_router import router as admin_router
 from config_router import router as config_router
 from branch import router as branch_router
@@ -28,9 +27,10 @@ from chrome_debug_router import router as chrome_debug_router
 from promotion_router import router as promotion_router
 from project_price_router import router as project_price_router
 from special_price_request_router import router as special_price_request_router
-from approver_info_router import router as approver_info_router
 from print_router import router as print_router
 from product_image_router import router as product_image_router
+from project_files_router import router as project_files_router
+from statistics_router import router as statistics_router
 
 
 from config.config_external_api import CUSTOMER_API_KEY
@@ -79,6 +79,13 @@ async def lifespan(app: FastAPI):
     logger.info("Application startup initiated")
     logger.info("="*60)
     
+    # Ensure storage folders exist
+    from file_storage_config import ensure_storage_folders_exist
+    if ensure_storage_folders_exist():
+        logger.info("✅ Storage folders initialized successfully")
+    else:
+        logger.warning("⚠️  Some storage folders could not be created")
+    
     logger.info("Application startup completed")
     
     yield  # Application is running
@@ -122,7 +129,6 @@ app.include_router(customer_analytics_router)
 app.include_router(sq_router, prefix="/api")
 app.include_router(api_router, prefix="/api")
 app.include_router(cache_refresh_router)
-app.include_router(item_master_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(config_router, prefix="/api/config")
 app.include_router(branch_router)
@@ -131,9 +137,10 @@ app.include_router(chrome_debug_router)  # Chrome debug mode starter
 app.include_router(promotion_router)  # Promotion management
 app.include_router(project_price_router)  # Project price management
 app.include_router(special_price_request_router)  # Special price request management
-app.include_router(approver_info_router)  # Approver information
 app.include_router(print_router, prefix="/api")
 app.include_router(product_image_router)  # Product image management
+app.include_router(project_files_router)  # Project files management
+app.include_router(statistics_router)  # Statistics management
 
 
 
@@ -150,10 +157,17 @@ if not os.path.exists(dist_path):
 def health_check():
     return {"status": "ok"}
 
-# Mount product images directory
-product_images_path = os.path.join(BASE_DIR, "static", "product-images")
+# Mount product images directory (using config)
+from file_storage_config import get_product_images_folder, get_project_files_folder
+
+product_images_path = get_product_images_folder()
 os.makedirs(product_images_path, exist_ok=True)
 app.mount("/static/product-images", StaticFiles(directory=product_images_path), name="product-images")
+
+# Mount project files directory (using config)
+project_files_path = get_project_files_folder()
+os.makedirs(project_files_path, exist_ok=True)
+app.mount("/static/project-files", StaticFiles(directory=project_files_path), name="project-files")
 
 if os.path.exists(dist_path):
     print(f"Serving static files from: {dist_path}")

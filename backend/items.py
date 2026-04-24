@@ -69,10 +69,8 @@ def row_to_item(row, branch_code: str, inventory_service=None) -> dict:
     }
 
 
-# ======================================================
-# GET /items/categories/list  (เหมือนเดิม)
-# ======================================================
-@router.get("/categories/list")
+
+@router.get("/categories/list") #ดึงหมวดหมู่สินค้า
 def get_item_categories():
     conn = get_mssql_conn()
     cursor = conn.cursor()
@@ -95,29 +93,26 @@ def get_item_categories():
     return [{"name": r[0], "count": r[1]} for r in rows]
 
 
-# ======================================================
-# ✅ NEW: GET /items/categories/{category}/list
-# 👉 LIGHT LIST (เร็วมาก) + รองรับ filter
-# ======================================================
-@router.get("/categories/{category_name}/list")
+
+@router.get("/categories/{category_name}/list") #ดึงสินค้าตามหมวดหมู่
 def get_items_list_light(
     category_name: str,
     branch_code: str = Depends(get_branch_code),
     limit: int = 10,
     offset: int = 0,
-    # ⭐ เพิ่ม filter parameters
+    # filter parameters
     brand: str = None,
     group: str = None,
     subGroup: str = None,
     color: str = None,
     thickness: str = None,
     character: str = None,
-    search: str = None,  # ⭐ เพิ่ม search parameter
+    search: str = None,  # search parameter
 ):
     conn = get_mssql_conn()
     cursor = conn.cursor()
 
-    # ⭐ สร้าง WHERE clause สำหรับ filter - ใช้อักษรตัวแรกของ SKU แทน Inventory_Posting_Group
+    # สร้าง WHERE clause สำหรับ filter - ใช้อักษรตัวแรกของ SKU แทน Inventory_Posting_Group
     where_clauses = ["LEFT(im.SKU, 1) = ?", "im.Blocked = 0"]
     params = [category_name.upper()]  # category first
 
@@ -175,7 +170,7 @@ def get_items_list_light(
             where_clauses.append("SUBSTRING(im.SKU, 11, 1) = ?")
             params.append(character)
 
-    # ⭐ Filter by SKU pattern (Sealant: SBBGGGCC)
+    # Filter by SKU pattern (Sealant: SBBGGGCC)
     elif category_name.upper() == "S":
         if brand:
             where_clauses.append("SUBSTRING(im.SKU, 2, 2) = ?")
@@ -190,7 +185,7 @@ def get_items_list_light(
             where_clauses.append("SUBSTRING(im.SKU, 9, 2) = ?")
             params.append(color.zfill(2))
 
-    # ⭐ Filter by SKU pattern (Gypsum: YBBGGSCCCTT...)
+    # Filter by SKU pattern (Gypsum: YBBGGSCCCTT...)
     elif category_name.upper() == "Y":
         if brand:
             where_clauses.append("SUBSTRING(im.SKU, 2, 2) = ?")
@@ -270,11 +265,7 @@ def get_items_list_light(
     }
 
 
-# ======================================================
-# ✅ NEW: GET /items/list (Paginated list with filters)
-# 👉 สำหรับหน้า CheckProduct - โหลดแบบ pagination + filter
-# ======================================================
-@router.get("/list")
+@router.get("/list") #ดึงสินค้าแบบ pagination
 def get_items_paginated(
     branch_code: str = Depends(get_branch_code),
     limit: int = 50,
@@ -388,12 +379,8 @@ def get_items_paginated(
     }
 
 
-# ======================================================
-# GET /items/search (Full-Text Search)
-# ⭐ ต้องอยู่ก่อน /{sku} เพื่อไม่ให้ FastAPI คิดว่า "search" คือ SKU
-# ⭐ รองรับ Full-Text Search ถ้ามี Full-Text Index
-# ======================================================
-@router.get("/search")
+
+@router.get("/search") #FullTextSearch
 def full_text_search_items(
     q: str = Query(..., min_length=1),
     branch_code: str = Depends(get_branch_code)
@@ -512,12 +499,8 @@ def full_text_search_items(
     return [row_to_item(Row(r), branch_code, None) for r in rows]
 
 
-# ======================================================
-# ✅ NEW: GET /items/{sku}
-# 👉 FULL DETAIL + enrich (ตอนกด dropdown)
-# 👉 รองรับทั้ง SKU และ SKU2 (No_2)
-# ======================================================
-@router.get("/{sku}")
+
+@router.get("/{sku}") #ดึงข้อมูลสินค้าจาก Item_Master
 def get_item_detail(sku: str, branch_code: str = Depends(get_branch_code)):
     conn = get_mssql_conn()
     cursor = conn.cursor()
@@ -626,16 +609,13 @@ def get_item_detail(sku: str, branch_code: str = Depends(get_branch_code)):
     return item
 
 
-# ======================================================
-# ✅ NEW: GET /items/related/{sku}
-# 👉 ดึงสินค้าที่อยู่ใน Product Group เดียวกัน (LIGHT VERSION - เร็ว)
-# ======================================================
-@router.get("/related/{sku}")
+
+@router.get("/related/{sku}") #ดึงสินค้าที่Group เดียวกัน
 def get_related_items(sku: str, limit: int = 50, branch_code: str = Depends(get_branch_code)):
     conn = get_mssql_conn()
     cursor = conn.cursor()
 
-    # ⭐ หา product_group ของ SKU นี้ก่อน (เร็ว)
+    # หา product_group ของ SKU นี้ก่อน (เร็ว)
     sql = """
         SELECT Product_Group
         FROM Item_Master
@@ -650,7 +630,7 @@ def get_related_items(sku: str, limit: int = 50, branch_code: str = Depends(get_
 
     product_group = row[0]
 
-    # ⭐ ดึงสินค้าใน Product Group เดียวกัน (LIGHT - เฉพาะข้อมูลที่จำเป็น)
+    # ดึงสินค้าใน Product Group เดียวกัน (LIGHT - เฉพาะข้อมูลที่จำเป็น)
     sql = f"""
         SELECT TOP {limit}
             im.SKU,
@@ -689,11 +669,8 @@ def get_related_items(sku: str, limit: int = 50, branch_code: str = Depends(get_
     }
 
 
-# ======================================================
-# ✅ NEW: GET /items/categories/{category}/filter-options
-# 👉 ดึง filter options ที่ปรับตาม filter ที่เลือกแล้ว (cascading)
-# ======================================================
-@router.get("/categories/{category_name}/filter-options")
+
+@router.get("/categories/{category_name}/filter-options") #ดึง filter options ที่ปรับตาม filter ที่เลือกแล้ว (cascading)
 def get_filter_options(
     category_name: str,
     branch_code: str = Depends(get_branch_code),
@@ -887,11 +864,7 @@ def get_filter_options(
 
 
 
-# ======================================================
-# ✅ NEW: GET /items/{sku}/stock
-# 👉 ดึงข้อมูล stock จาก Item_Ledger API แยกตามสาขา
-# ======================================================
-@router.get("/{sku}/stock")
+@router.get("/{sku}/stock") #ดึงข้อมูล stock จาก Item_Ledger API แยกตามสาขา
 def get_item_stock(sku: str, branch_code: str = Depends(get_branch_code)):
     """
     ดึงข้อมูล stock สำหรับ item เฉพาะสาขาของพนักงาน
