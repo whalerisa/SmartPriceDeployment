@@ -82,16 +82,32 @@ def get_page_access_config() -> Dict[str, Any]:
     
     # Try to load from JSON file
     try:
-        config_file = os.path.join(os.path.dirname(__file__), "page_access_config.json")
-        if os.path.exists(config_file):
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "page_access_config.json"),  # Development
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_access_config.json"),  # Absolute path
+            os.path.join(os.getcwd(), "page_access_config.json"),  # Current working directory
+            os.path.join(os.getcwd(), "backend", "page_access_config.json"),  # CWD/backend
+            "page_access_config.json",  # Relative to CWD
+        ]
+        
+        config_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                config_file = path
+                break
+        
+        if config_file and os.path.exists(config_file):
             with open(config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 # Cache it for future use
                 set_cached_config("PAGE_ACCESS_CONFIG", config)
-                logger.info(f"Loaded page access config from {config_file}")
+                logger.info(f"✅ Loaded page access config from {config_file}")
                 return config
+        else:
+            logger.warning(f"⚠️ page_access_config.json not found in any of these locations: {possible_paths}")
     except Exception as e:
-        logger.error(f"Failed to load page access config from file: {e}")
+        logger.error(f"❌ Failed to load page access config from file: {e}")
     
     # Default configuration
     default_config = {
@@ -131,12 +147,28 @@ def set_page_access_config(config: Dict[str, Any]) -> None:
     
     # Persist to JSON file
     try:
-        config_file = os.path.join(os.path.dirname(__file__), "page_access_config.json")
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "page_access_config.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "page_access_config.json"),
+            os.path.join(os.getcwd(), "page_access_config.json"),
+            os.path.join(os.getcwd(), "backend", "page_access_config.json"),
+        ]
+        
+        config_file = None
+        for path in possible_paths:
+            if os.path.exists(path) or os.path.exists(os.path.dirname(path)):
+                config_file = path
+                break
+        
+        if not config_file:
+            config_file = possible_paths[0]  # Default to first path
+        
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
-        logger.info(f"Page access config updated and saved to {config_file} for {len(config)} pages")
+        logger.info(f"✅ Page access config updated and saved to {config_file} for {len(config)} pages")
     except Exception as e:
-        logger.error(f"Failed to save page access config to file: {e}")
+        logger.error(f"❌ Failed to save page access config to file: {e}")
         # Still update cache even if file save fails
         logger.info(f"Page access config updated in cache for {len(config)} pages")
 
@@ -161,16 +193,32 @@ def get_role_approval_scope() -> Dict[str, Any]:
     
     # Try to load from JSON file
     try:
-        config_file = os.path.join(os.path.dirname(__file__), "role_approval_scope.json")
-        if os.path.exists(config_file):
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "role_approval_scope.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_approval_scope.json"),
+            os.path.join(os.getcwd(), "role_approval_scope.json"),
+            os.path.join(os.getcwd(), "backend", "role_approval_scope.json"),
+            "role_approval_scope.json",
+        ]
+        
+        config_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                config_file = path
+                break
+        
+        if config_file and os.path.exists(config_file):
             with open(config_file, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 # Cache it for future use
                 set_cached_config("ROLE_APPROVAL_SCOPE", config)
-                logger.info(f"Loaded role approval scope from {config_file}")
+                logger.info(f"✅ Loaded role approval scope from {config_file}")
                 return config
+        else:
+            logger.warning(f"⚠️ role_approval_scope.json not found in any of these locations: {possible_paths}")
     except Exception as e:
-        logger.error(f"Failed to load role approval scope from file: {e}")
+        logger.error(f"❌ Failed to load role approval scope from file: {e}")
     
     # Default configuration
     default_config = {
@@ -196,11 +244,27 @@ def set_role_approval_scope(config: Dict[str, Any]) -> None:
     
     # Persist to JSON file
     try:
-        config_file = os.path.join(os.path.dirname(__file__), "role_approval_scope.json")
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "role_approval_scope.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_approval_scope.json"),
+            os.path.join(os.getcwd(), "role_approval_scope.json"),
+            os.path.join(os.getcwd(), "backend", "role_approval_scope.json"),
+        ]
+        
+        config_file = None
+        for path in possible_paths:
+            if os.path.exists(path) or os.path.exists(os.path.dirname(path)):
+                config_file = path
+                break
+        
+        if not config_file:
+            config_file = possible_paths[0]  # Default to first path
+        
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config, f, ensure_ascii=False, indent=2)
-        logger.info(f"Role approval scope updated and saved to {config_file} for {len(config)} roles")
+        logger.info(f"✅ Role approval scope updated and saved to {config_file} for {len(config)} roles")
     except Exception as e:
-        logger.error(f"Failed to save role approval scope to file: {e}")
+        logger.error(f"❌ Failed to save role approval scope to file: {e}")
         # Still update cache even if file save fails
         logger.info(f"Role approval scope updated in cache for {len(config)} roles")

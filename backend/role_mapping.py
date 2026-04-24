@@ -78,13 +78,30 @@ def load_custom_roles() -> dict:
         Dictionary of custom roles: {role_code: {thai_name, display_name}}
     """
     try:
-        custom_roles_file = os.path.join(os.path.dirname(__file__), "custom_roles.json")
-        if os.path.exists(custom_roles_file):
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "custom_roles.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_roles.json"),
+            os.path.join(os.getcwd(), "custom_roles.json"),
+            os.path.join(os.getcwd(), "backend", "custom_roles.json"),
+            "custom_roles.json",
+        ]
+        
+        custom_roles_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                custom_roles_file = path
+                break
+        
+        if custom_roles_file and os.path.exists(custom_roles_file):
             with open(custom_roles_file, "r", encoding="utf-8") as f:
                 custom_roles = json.load(f)
+            logger.info(f"✅ Loaded custom roles from {custom_roles_file}")
             return custom_roles
+        else:
+            logger.warning(f"⚠️ custom_roles.json not found in any of these locations: {possible_paths}")
     except Exception as e:
-        logger.error(f"Failed to load custom roles from file: {e}")
+        logger.error(f"❌ Failed to load custom roles from file: {e}")
     return {}
 
 

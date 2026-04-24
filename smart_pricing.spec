@@ -45,6 +45,11 @@ datas = [
     (frontend_dist_path, 'dist'),    # Frontend static files
     (backend_path + '/quotation.html', '.'), # Templates
     (backend_path + '/Sarabun-Regular.ttf', '.'), # Fonts
+    # JSON configuration files
+    (backend_path + '/page_access_config.json', '.'),
+    (backend_path + '/role_approval_scope.json', '.'),
+    (backend_path + '/custom_roles.json', '.'),
+    (backend_path + '/employees.json', '.'),
     # mean_sd.json removed - statistics now calculated from database
 ]
 

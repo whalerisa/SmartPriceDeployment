@@ -324,7 +324,24 @@ async def create_role(
         
         # Load existing custom roles from JSON file
         import json
-        custom_roles_file = os.path.join(os.path.dirname(__file__), "custom_roles.json")
+        
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "custom_roles.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_roles.json"),
+            os.path.join(os.getcwd(), "custom_roles.json"),
+            os.path.join(os.getcwd(), "backend", "custom_roles.json"),
+            "custom_roles.json",
+        ]
+        
+        custom_roles_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                custom_roles_file = path
+                break
+        
+        if not custom_roles_file:
+            custom_roles_file = possible_paths[0]  # Default to first path
         
         try:
             with open(custom_roles_file, "r", encoding="utf-8") as f:
@@ -384,7 +401,24 @@ async def delete_role(
     try:
         # Load existing custom roles from JSON file
         import json
-        custom_roles_file = os.path.join(os.path.dirname(__file__), "custom_roles.json")
+        
+        # Try multiple possible locations for the config file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "custom_roles.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_roles.json"),
+            os.path.join(os.getcwd(), "custom_roles.json"),
+            os.path.join(os.getcwd(), "backend", "custom_roles.json"),
+            "custom_roles.json",
+        ]
+        
+        custom_roles_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                custom_roles_file = path
+                break
+        
+        if not custom_roles_file:
+            custom_roles_file = possible_paths[0]  # Default to first path
         
         try:
             with open(custom_roles_file, "r", encoding="utf-8") as f:
@@ -514,14 +548,23 @@ async def get_region_mapping(employee: dict = Depends(get_current_employee)):
         import json
         from branch_region_mapping import BRANCH_REGION_MAP
         
-        # Fix: Ensure we're looking in the backend directory
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
-        employees_file = os.path.join(backend_dir, "employees.json")
+        # Try multiple possible locations for the employees file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "employees.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "employees.json"),
+            os.path.join(os.getcwd(), "employees.json"),
+            os.path.join(os.getcwd(), "backend", "employees.json"),
+            "employees.json",
+        ]
         
-        # If file doesn't exist in backend dir, it might be running from root
-        if not os.path.exists(employees_file):
-            # Try relative path from current working directory
-            employees_file = os.path.join("backend", "employees.json")
+        employees_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                employees_file = path
+                break
+        
+        if not employees_file:
+            raise HTTPException(status_code=404, detail="Employees file not found")
         
         # Load employees.json
         with open(employees_file, "r", encoding="utf-8") as f:
@@ -591,14 +634,24 @@ async def update_region_manager(
     
     try:
         import json
-        # Fix: Ensure we're looking in the backend directory
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
-        employees_file = os.path.join(backend_dir, "employees.json")
         
-        # If file doesn't exist in backend dir, it might be running from root
-        if not os.path.exists(employees_file):
-            # Try relative path from current working directory
-            employees_file = os.path.join("backend", "employees.json")
+        # Try multiple possible locations for the employees file
+        possible_paths = [
+            os.path.join(os.path.dirname(__file__), "employees.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "employees.json"),
+            os.path.join(os.getcwd(), "employees.json"),
+            os.path.join(os.getcwd(), "backend", "employees.json"),
+            "employees.json",
+        ]
+        
+        employees_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                employees_file = path
+                break
+        
+        if not employees_file:
+            raise HTTPException(status_code=404, detail="Employees file not found")
         
         logger.info(f"🔍 Updating region {region_code} with data: {update_data}")
         logger.info(f"📂 Employees file path: {employees_file}")

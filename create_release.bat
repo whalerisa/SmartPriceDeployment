@@ -24,7 +24,13 @@ cd ..
 echo 3. Running PyInstaller...
 pyinstaller --noconfirm --clean smart_pricing.spec
 
-echo 4. Finalizing Release...
+echo 4. Copying JSON configuration files...
+copy backend\page_access_config.json dist\smart_pricing\
+copy backend\role_approval_scope.json dist\smart_pricing\
+copy backend\custom_roles.json dist\smart_pricing\
+copy backend\employees.json dist\smart_pricing\
+
+echo 5. Finalizing Release...
 copy start_server.bat dist\smart_pricing\
 copy DEPLOYMENT.md dist\smart_pricing\
 

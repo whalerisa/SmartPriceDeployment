@@ -129,13 +129,35 @@ def get_employee_role(employee_id: str):
     ดึงข้อมูล role และ region จาก employees.json
     """
     import json
+    import os
     try:
-        with open("employees.json", "r", encoding="utf-8") as f:
+        # Try multiple possible locations for the employees file
+        possible_paths = [
+            "employees.json",
+            os.path.join("backend", "employees.json"),
+            os.path.join(os.path.dirname(__file__), "employees.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "employees.json"),
+            os.path.join(os.getcwd(), "employees.json"),
+            os.path.join(os.getcwd(), "backend", "employees.json"),
+        ]
+        
+        employees_file = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                employees_file = path
+                break
+        
+        if not employees_file:
+            print(f"❌ employees.json not found in any of these locations: {possible_paths}")
+            return None
+        
+        with open(employees_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             employees = data.get("employees", [])
             
             for emp in employees:
                 if str(emp.get("employee_id")) == str(employee_id):
+                    print(f"✅ Found employee {employee_id} in {employees_file}")
                     return {
                         "role": emp.get("role"),
                         "region": emp.get("region")
