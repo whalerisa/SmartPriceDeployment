@@ -208,14 +208,22 @@ async def init_from_uxp(request: Request, response: Response):
         # ⭐ ดึง branches จาก UXP token
         uxp_branches = payload.get("branches", [])
         print(f"✅ Branches from UXP token: {uxp_branches}")
+        print(f"   Type: {type(uxp_branches)}, Length: {len(uxp_branches) if uxp_branches else 0}")
         
         # ดึงข้อมูลพนักงานจาก API
         emp = await load_employee(str(emp_code))
         if not emp:
             raise HTTPException(status_code=401, detail=f"ไม่พบข้อมูลพนักงาน: {emp_code}")
         
+        print(f"📋 Employee data from API:")
+        print(f"   branches: {emp.get('branches')}")
+        print(f"   branchId: {emp.get('branchId')}")
+        
         # ⭐ ถ้า UXP token มี branches ให้ใช้แทน (และเรียงลำดับความสำคัญ)
-        if uxp_branches:
+        if uxp_branches and len(uxp_branches) > 0:
+            print(f"🔄 Using branches from UXP token instead of Employee API")
+            print(f"   Original UXP branches: {uxp_branches}")
+            
             # ลำดับความสำคัญของสาขา: 00TR > 90HO > อื่นๆ
             priority_order = ["00TR", "90HO"]
             sorted_branches = []
@@ -232,28 +240,19 @@ async def init_from_uxp(request: Request, response: Response):
             
             emp["branches"] = sorted_branches
             emp["branchId"] = sorted_branches[0]  # ใช้สาขาแรก (หลังเรียงลำดับ) เป็น primary
-            print(f"✅ Updated branches from UXP token: {sorted_branches}")
+            print(f"✅ Sorted branches: {sorted_branches}")
+            print(f"   Primary branch (branchId): {emp['branchId']}")
+        else:
+            print(f"⚠️ No branches in UXP token, using Employee API branches")
+            print(f"   Employee API branches: {emp.get('branches', [])}")
         
-        # ⭐ ถ้ามีสาขา 90HO และ 00TR ให้ใช้ 00TR โดยอัตโนมัติ
+        # ⭐ เลือกสาขาอัตโนมัติตามลำดับความสำคัญ (00TR > 90HO > อื่นๆ)
         branches = emp.get("branches", [])
-        if "90HO" in branches and "00TR" in branches:
-            print(f"✅ Employee {emp_code} has 90HO and 00TR, auto-selecting 00TR")
-            emp["branchId"] = "00TR"
-            # ไม่ต้อง return เพื่อให้ผ่านไปสร้าง token ด้านล่าง
-        elif len(branches) > 1:
-            # ถ้ามีหลายสาขาแต่ไม่ใช่กรณี 90HO+00TR ให้ส่งกลับเพื่อให้ผู้ใช้เลือก
-            print(f"✅ Employee {emp_code} has {len(branches)} branches, returning for selection")
-            return {
-                "token": None,
-                "employee": {
-                    "id": emp["id"],
-                    "name": emp["name"],
-                    "branchId": emp["branchId"],
-                    "branches": emp["branches"],
-                }
-            }
+        print(f"📋 Creating token for employee {emp_code}:")
+        print(f"   Branches: {branches}")
+        print(f"   Primary branch (branchId): {emp['branchId']}")
         
-        # ถ้ามีเพียงสาขาเดียว ให้สร้าง token เลย
+        # สร้าง token payload
         token_payload = {
             "sub": emp["id"],
             "name": emp["name"],
@@ -261,9 +260,10 @@ async def init_from_uxp(request: Request, response: Response):
             "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
         }
         
-        # ⭐ เพิ่ม branches ลงใน token
+        # ⭐ เพิ่ม branches array ลงใน token (IMPORTANT!)
         if emp.get("branches"):
             token_payload["branches"] = emp["branches"]
+            print(f"   ✅ Added branches to token: {token_payload['branches']}")
         
         # เพิ่ม role และ region จาก UXP token ก่อน (ถ้ามี)
         uxp_roles = payload.get("roles") or payload.get("role")

@@ -46,20 +46,8 @@ function Login() {
       const response = await api.post("/api/login/init");
       console.log("Login response:", response.data);
 
-      // ถ้าพนักงานมีหลายสาขา ให้เลือกสาขา
-      if (response.data.employee?.branches && response.data.employee.branches.length > 1) {
-        setFormData(prev => ({
-          ...prev,
-          employeeCode: response.data.employee.id,
-          branches: response.data.employee.branches,
-          selectedBranch: response.data.employee.branchId,
-        }));
-        setLoginMode("selectBranch");
-        setLoading(false);
-        return;
-      }
-
-      // ถ้ามีเพียงสาขาเดียว ให้เข้าสู่ระบบเลย
+      // Backend จะเลือกสาขาอัตโนมัติตามลำดับความสำคัญ (00TR > 90HO > อื่นๆ)
+      // ไม่ต้องให้ผู้ใช้เลือกสาขาอีก
       window.location.href = "/dashboard";
     } catch (err) {
       console.error("Login error:", err);

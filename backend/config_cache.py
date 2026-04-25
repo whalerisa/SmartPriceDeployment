@@ -119,7 +119,7 @@ def get_page_access_config() -> Dict[str, Any]:
         "project_price": {
             "page_name": "project_price",
             "page_label": "สร้างรหัสโครงการ",
-            "allowed_roles": ["PM", "SDM", "CEO", "Admin"]
+            "allowed_roles": ["Sales_Project", "PM", "SDM", "CEO", "Admin"]  # ⭐ เพิ่ม Sales_Project
         },
         "special_price_approval": {
             "page_name": "special_price_approval",

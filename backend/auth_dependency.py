@@ -95,6 +95,12 @@ def get_employee_info(request: Request, authorization: str = Header(None)) -> di
         # Extract branchId
         branch_code = payload.get("branchId") or payload.get("branch_code") or payload.get("branch") or "00TR"
         
+        # Extract branches array (NEW: support multiple branches)
+        branches = payload.get("branches", [])
+        if not branches:
+            # ถ้าไม่มี branches array ให้ใช้ branchId เป็น array เดียว
+            branches = [branch_code] if branch_code else []
+        
         # Extract role from token (NEW: supports nested role object)
         role_internal = "Sales"  # Default
         thai_role_name = None
@@ -135,6 +141,7 @@ def get_employee_info(request: Request, authorization: str = Header(None)) -> di
             "employee_id": employee_id,
             "name": name,
             "branch_code": branch_code,
+            "branches": branches,  # NEW: Include branches array
             "role": role_internal,  # Internal role code (Sales, ZM, RM, SDM, PM, CEO)
             "region": region,  # Derived from branch
             "thai_role_name": thai_role_name  # Keep original Thai name for reference
@@ -142,7 +149,7 @@ def get_employee_info(request: Request, authorization: str = Header(None)) -> di
         
         logger.info(
             f"[JWT] Extracted: employee_id={employee_id}, name={name}, "
-            f"branch={branch_code}, role={role_internal}, region={region}, "
+            f"branch={branch_code}, branches={branches}, role={role_internal}, region={region}, "
             f"thai_role_name={thai_role_name}"
         )
         
