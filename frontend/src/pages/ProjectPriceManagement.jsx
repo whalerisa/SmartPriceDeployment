@@ -60,6 +60,10 @@ const ProjectPriceManagement = () => {
   const [items, setItems] = useState([]);
   const [branches, setBranches] = useState([]);
   
+  // File upload state
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  
   // Employee search state
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
   const [employeeDisplayName, setEmployeeDisplayName] = useState(''); // แสดงชื่อในช่อง input
@@ -916,6 +920,13 @@ const ProjectPriceManagement = () => {
 
   const startEditProject = async (project) => {
     setEditingProjectId(project.project_id);
+    
+    // ⭐ แปลงรูปแบบวันที่จาก "2026-04-24 00:00:00" เป็น "2026-04-24"
+    const formatDateForInput = (dateStr) => {
+      if (!dateStr) return '';
+      return dateStr.split(' ')[0]; // ตัดเวลาออก
+    };
+    
     setFormData({
       project_code: project.project_code,
       project_name: project.project_name || '',
@@ -923,10 +934,10 @@ const ProjectPriceManagement = () => {
       customer_name: project.customer_name || '',
       branch_code: project.branch_code || '',
       site_branch_code: project.site_branch_code || '',
-      price_start_date: project.price_start_date || '',
-      price_end_date: project.price_end_date || '',
+      price_start_date: formatDateForInput(project.price_start_date),
+      price_end_date: formatDateForInput(project.price_end_date),
       request_by: project.request_by || '',
-      request_date: project.request_date || new Date().toISOString().split('T')[0],
+      request_date: formatDateForInput(project.request_date) || new Date().toISOString().split('T')[0],
       remark: project.remark || '',
     });
     
@@ -1224,6 +1235,11 @@ const ProjectPriceManagement = () => {
     });
     
     setItems(groupedItems);
+    
+    // ⭐ ตั้งค่า priceMode จาก project.price_mode (ถ้าไม่มีให้ดูจาก customer_code)
+    const mode = project.price_mode || (project.customer_code ? 'project' : 'branch');
+    setPriceMode(mode);
+    
     setShowForm(true);
   };
 
@@ -1336,32 +1352,90 @@ const ProjectPriceManagement = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Row 1: Project Code & Name */}
             {editingProjectId ? (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    รหัสโครงการ
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.project_code}
-                    disabled
-                    className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-600 cursor-not-allowed"
-                  />
+              // ⭐ โหมดแก้ไข - แสดงฟอร์มตาม priceMode
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      รหัสโครงการ
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.project_code}
+                      disabled
+                      className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-600 cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {priceMode === 'customer' ? 'ชื่อแคมเปญ' : 'ชื่อโครงการ'} <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.project_name}
+                      onChange={(e) => setFormData({...formData, project_name: e.target.value})}
+                      className="w-full border rounded-lg px-3 py-2"
+                      placeholder={priceMode === 'customer' ? 'เช่น EFC' : 'เช่น โครงการคอนโดXXX'}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    ชื่อโครงการ <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.project_name}
-                    onChange={(e) => setFormData({...formData, project_name: e.target.value})}
-                    className="w-full border rounded-lg px-3 py-2"
-                    placeholder="เช่น โครงการคอนโดXXX"
-                  />
+                
+                {/* ⭐ แสดงช่องรหัสลูกค้า, ชื่อลูกค้า, และสาขา */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      รหัสลูกค้า {priceMode === 'customer' && <span className="text-red-500">*</span>}
+                    </label>
+                    <input
+                      type="text"
+                      required={priceMode === 'customer'}
+                      value={formData.customer_code}
+                      onChange={(e) => {
+                        const code = e.target.value.toUpperCase();
+                        setFormData({...formData, customer_code: code});
+                        
+                        if (code.trim().length > 0) {
+                          fetchCustomerName(code.trim());
+                        } else {
+                          setFormData(prev => ({...prev, customer_name: ''}));
+                        }
+                      }}
+                      className="w-full border rounded-lg px-3 py-2"
+                      placeholder="เช่น 08015AY"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ชื่อลูกค้า
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.customer_name}
+                      readOnly
+                      className="w-full border rounded-lg px-3 py-2 bg-gray-50 text-gray-700"
+                      placeholder="ชื่อลูกค้า (อัตโนมัติ)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      สาขา 
+                    </label>
+                    <select
+                      value={formData.branch_code}
+                      onChange={(e) => setFormData({...formData, branch_code: e.target.value})}
+                      className="w-full border rounded-lg px-3 py-2"
+                    >
+                      <option value="">เลือกสาขา</option>
+                      {Array.isArray(branches) && branches.map(b => (
+                        <option key={b.Code} value={b.Code}>{b.Name} ({b.Code})</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              </div>
+              </>
             ) : priceMode === 'customer' ? (
               // ฟอร์มสำหรับโหมดลูกค้าพิเศษ - มีชื่อแคมเปญแทนชื่อโครงการ
               <div className="grid grid-cols-3 gap-4">
