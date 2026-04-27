@@ -16,7 +16,6 @@ from cross_sell_router import cross_sell_router
 from invoice_router import router as invoice_router
 from price_update import router as price_update_router
 from customer_analytics import router as customer_analytics_router
-from api.router_sq import router as sq_router
 from products_router import api_router
 from cache_refresh_router import router as cache_refresh_router
 from admin_router import router as admin_router
@@ -126,7 +125,6 @@ app.include_router(cross_sell_router,prefix="/api")
 app.include_router(invoice_router)
 app.include_router(price_update_router, prefix="/api")
 app.include_router(customer_analytics_router)
-app.include_router(sq_router, prefix="/api")
 app.include_router(api_router, prefix="/api")
 app.include_router(cache_refresh_router)
 app.include_router(admin_router, prefix="/api")

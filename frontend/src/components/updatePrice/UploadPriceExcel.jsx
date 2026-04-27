@@ -57,7 +57,19 @@ export default function UploadPriceExcel({ onUploaded }) {
       // Send branch_codes as query parameter (comma-separated)
       const branchCodes = selectedBranches.join(",");
       const res = await api.post(`/api/admin/prices/upload?branch_code=${branchCodes}`, form);
+      
+      // ⭐ แสดงข้อความสำเร็จ
+      alert(`✅ อัปโหลดเสร็จสิ้น!\n\nอัปเดตราคาสำเร็จ: ${res.data.successful_updates} รายการ\nข้อผิดพลาด: ${res.data.errors} รายการ`);
+      
       onUploaded(res.data);
+      
+      // ⭐ รีเซ็ตฟอร์ม
+      setFile(null);
+      setSelectedBranches([]);
+    } catch (error) {
+      // แสดงข้อความ error
+      const errorMsg = error.response?.data?.detail || error.message || "เกิดข้อผิดพลาดในการอัปโหลด";
+      alert(`❌ เกิดข้อผิดพลาด!\n\n${errorMsg}`);
     } finally {
       setLoading(false);
     }

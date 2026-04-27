@@ -12,11 +12,12 @@ import os
 import tempfile
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query as QueryParam
+from fastapi import APIRouter, UploadFile, File, HTTPException, Query as QueryParam, Depends
 from pydantic import BaseModel
 
 from config.db_mssql import get_mssql_conn
 from services.price_upload_service import PriceUploadService, ValidationError
+from auth_dependency import get_employee_info
 
 
 # Configure logging
@@ -41,7 +42,8 @@ class UploadResponse(BaseModel):
 @router.post("/prices/upload", response_model=UploadResponse) #Upload Excel ราคา
 async def upload_prices(
     file: UploadFile = File(...),
-    branch_code: str = QueryParam(..., description="Branch code(s) for price data (comma-separated)")
+    branch_code: str = QueryParam(..., description="Branch code(s) for price data (comma-separated)"),
+    employee_info: dict = Depends(get_employee_info)
 ):
     """
     Upload price file (CSV or Excel) and update Item_Price table.
@@ -68,6 +70,7 @@ async def upload_prices(
         HTTPException 500: When database operation fails
     """
     logger.info(f"Received price upload request for branches: {branch_code}")
+    logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')}), Role: {employee_info.get('role')}")
     
     # Parse branch codes
     branch_codes = [b.strip() for b in branch_code.split(",") if b.strip()]
@@ -112,7 +115,11 @@ async def upload_prices(
         
         for branch in branch_codes:
             logger.info(f"Processing upload for branch: {branch}")
-            result = service.process_upload(temp_path, branch)
+            result = service.process_upload(
+                file_path=temp_path,
+                branch_code=branch,
+                employee_info=employee_info  # ⭐ ส่งข้อมูล employee
+            )
             
             total_rows += result.total_rows
             total_successful += result.successful_updates

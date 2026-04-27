@@ -72,7 +72,7 @@ class PriceUploadService:
         self.db_connection = db_connection
         logger.info("PriceUploadService initialized")
     
-    def process_upload(self, file_path: str, branch_code: str) -> UploadResult:
+    def process_upload(self, file_path: str, branch_code: str, employee_info: dict) -> UploadResult:
         """
         Process price file (CSV or Excel) and update Item_Price table.
         
@@ -96,7 +96,9 @@ class PriceUploadService:
             ValidationError: When file format is invalid or required columns missing
         """
         self._branch_code = branch_code
+        self._employee_info = employee_info  # ⭐ เก็บข้อมูล employee
         logger.info(f"Processing price upload: {file_path} for branch: {branch_code}")
+        logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')})")
         
         # Validate file format
         self._validate_file_format(file_path)
@@ -116,6 +118,10 @@ class PriceUploadService:
         successful_updates = 0
         errors = 0
         error_details = []
+        
+        # ⭐ สร้าง version log
+        version_id = self._create_version_log(price_data)
+        logger.info(f"Created version log: {version_id}")
         
         logger.info(f"Processing {total_rows} price records")
         
@@ -166,7 +172,7 @@ class PriceUploadService:
                 }
                 
                 # Upsert price
-                self._upsert_price(price_record)
+                self._upsert_price(price_record, version_id, idx)  # ⭐ ส่ง version_id และ row index
                 successful_updates += 1
                 logger.debug(f"Successfully processed SKU: {sku}")
             
@@ -331,17 +337,83 @@ class PriceUploadService:
             logger.warning(f"Invalid decimal value: {value}")
             return None
     
-    def _upsert_price(self, price_data: Dict):
+    def _create_version_log(self, price_data: List[Dict]) -> int:
         """
-        Insert or update price in Item_Price table.
+        สร้าง version log ใน Item_Update_Version
+        
+        Returns:
+            version_id ที่สร้างขึ้น
+        """
+        cursor = self.db_connection.cursor()
+        try:
+            # สร้าง version_name: UPLOAD_YYYYMMDD_HHMMSS
+            now = datetime.now()
+            version_name = f"UPLOAD_{now.strftime('%Y%m%d_%H%M%S')}"
+            
+            # หา update_type จาก SKU (ตัวอักษรแรก)
+            categories = set()
+            for row in price_data:
+                sku = row.get(self._sku_column, "").strip()
+                if sku and len(sku) > 0:
+                    category = sku[0].upper()
+                    if category in ['G', 'A', 'Y', 'S', 'C', 'E']:
+                        categories.add(category)
+            
+            # ถ้ามีหลาย category ให้ใช้ MIXED, ถ้ามี 1 category ให้ใช้ category นั้น
+            if len(categories) > 1:
+                update_type = "MIXED"
+            elif len(categories) == 1:
+                update_type = list(categories)[0]
+            else:
+                update_type = "MIXED"  # default
+            
+            # ดึงข้อมูล employee
+            uploaded_by = self._employee_info.get('employee_id', 'system')
+            job_title = self._employee_info.get('role', 'MANAGER')
+            
+            # ⭐ หา version_id ถัดไป (MAX + 1)
+            cursor.execute("SELECT ISNULL(MAX(version_id), 0) + 1 FROM Item_Update_Version")
+            version_id = int(cursor.fetchone()[0])
+            
+            # ⭐ ใช้เวลาจาก Python แทน GETDATE()
+            uploaded_at = datetime.now()
+            
+            # Insert version log พร้อม version_id
+            cursor.execute("""
+                INSERT INTO Item_Update_Version (
+                    version_id, version_name, update_type, uploaded_by, job_title, 
+                    uploaded_at, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
+            """, (version_id, version_name, update_type, uploaded_by, job_title, uploaded_at))
+            
+            self.db_connection.commit()
+            
+            logger.info(f"Created version log: {version_id} ({version_name}), type: {update_type}")
+            return version_id
+            
+        except Exception as e:
+            logger.error(f"Failed to create version log: {e}")
+            self.db_connection.rollback()
+            raise
+        finally:
+            cursor.close()
+    
+    def _upsert_price(self, price_data: Dict, version_id: int, row_index: int):
+        """
+        Insert or update price in Item_Price table และบันทึก detail log
         
         Logic:
+        - ดึงราคาเก่าจาก Item_Price (ถ้ามี)
         - Check if SKU exists in Item_Price
         - If exists: UPDATE all price fields and UpdatedAt
         - If not exists: INSERT with UpdatedAt = current timestamp
+        - บันทึก detail log ลง Item_Update_Version_Detail
         
         Args:
             price_data: Dictionary with SKU and price fields
+            version_id: ID ของ version log
+            row_index: ลำดับแถวในไฟล์
         
         Raises:
             Exception: If database operation fails
@@ -352,13 +424,48 @@ class PriceUploadService:
         try:
             branch_code = price_data["BranchCode"]
             
-            # Check if price record exists for this SKU and Branch
-            cursor.execute(
-                "SELECT COUNT(*) FROM Item_Price WHERE SKU = ? AND BranchCode = ?",
-                (sku, branch_code)
-            )
-            exists = cursor.fetchone()[0] > 0
+            # ⭐ ดึงราคาเก่าก่อน update
+            cursor.execute("""
+                SELECT R1, R2, W1, W2, AlternateName
+                FROM Item_Price
+                WHERE SKU = ? AND BranchCode = ?
+            """, (sku, branch_code))
             
+            old_row = cursor.fetchone()
+            if old_row:
+                old_R1, old_R2, old_W1, old_W2, old_alternate_name = old_row
+                exists = True
+            else:
+                old_R1 = old_R2 = old_W1 = old_W2 = old_alternate_name = None
+                exists = False
+            
+            # ราคาใหม่
+            new_R1 = price_data["R1"]
+            new_R2 = price_data["R2"]
+            new_W1 = price_data["W1"]
+            new_W2 = price_data["W2"]
+            new_alternate_name = price_data["AlternateName"]
+            
+            # ⭐ คำนวณ change flags
+            change_price_flag = 0
+            if exists:
+                if (old_R1 != new_R1 or old_R2 != new_R2 or 
+                    old_W1 != new_W1 or old_W2 != new_W2):
+                    change_price_flag = 1
+            else:
+                # SKU ใหม่ถือว่ามีการเปลี่ยนแปลงราคา
+                change_price_flag = 1
+            
+            change_altname_flag = 0
+            if exists:
+                if old_alternate_name != new_alternate_name:
+                    change_altname_flag = 1
+            else:
+                # SKU ใหม่ถ้ามี alternate name ถือว่ามีการเปลี่ยนแปลง
+                if new_alternate_name:
+                    change_altname_flag = 1
+            
+            # Update หรือ Insert ราคา
             if exists:
                 # Update existing price
                 cursor.execute(
@@ -386,7 +493,6 @@ class PriceUploadService:
                         branch_code
                     )
                 )
-                self.db_connection.commit()
                 logger.debug(f"Updated price for SKU: {sku}, Branch: {branch_code}")
             
             else:
@@ -410,8 +516,36 @@ class PriceUploadService:
                         price_data["AlternateName"]
                     )
                 )
-                self.db_connection.commit()
                 logger.debug(f"Inserted new price for SKU: {sku}, Branch: {branch_code}")
+            
+            # ⭐ บันทึก detail log
+            # หา id ถัดไป (MAX + 1)
+            cursor.execute("SELECT ISNULL(MAX(id), 0) + 1 FROM Item_Update_Version_Detail")
+            detail_id = int(cursor.fetchone()[0])
+            
+            cursor.execute("""
+                INSERT INTO Item_Update_Version_Detail (
+                    id, version_id, sku, new_no2, 
+                    new_R1, new_R2, new_W1, new_W2,
+                    old_R1, old_R2, old_W1, old_W2,
+                    new_alternate_name, old_alternate_name,
+                    change_price_flag, change_altname_flag
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                detail_id,
+                version_id,
+                sku,
+                new_alternate_name,  # new_no2 (ชื่อสินค้า)
+                new_R1, new_R2, new_W1, new_W2,
+                old_R1, old_R2, old_W1, old_W2,
+                new_alternate_name,
+                old_alternate_name,
+                change_price_flag,
+                change_altname_flag
+            ))
+            
+            self.db_connection.commit()
         
         finally:
             cursor.close()

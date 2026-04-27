@@ -676,6 +676,14 @@ async def create_special_price_request(
                 item.approval_level
             ))
         
+        # ⭐ อัพเดท Quote_Header ให้เชื่อมโยงกับ special price request
+        cursor.execute("""
+            UPDATE Quote_Header
+            SET special_price_request_id = ?,
+                special_price_status = ?
+            WHERE QuoteNo = ?
+        """, (request_id, initial_status, request_data.quote_no))
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -684,6 +692,7 @@ async def create_special_price_request(
         logger.info(f"   Request ID: {request_id}")
         logger.info(f"   Status: {initial_status}")
         logger.info(f"   Approver: {approver_id}")
+        logger.info(f"   ✅ Quote_Header updated with request_id: {request_id}")
         
         return {
             "success": True,
@@ -902,6 +911,14 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
             request_id
         ))
         
+        # ⭐ อัพเดท Quote_Header ด้วย
+        quote_no = request.get('quote_no')
+        cursor.execute("""
+            UPDATE Quote_Header
+            SET special_price_status = ?
+            WHERE QuoteNo = ?
+        """, (new_status, quote_no))
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -909,6 +926,7 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
         logger.info(f"✅ Request #{request_id} approved successfully")
         logger.info(f"   New status: {new_status}")
         logger.info(f"   Approved by: {current_employee_id} ({current_name})")
+        logger.info(f"   ✅ Quote_Header updated with status: {new_status}")
         
         return {
             "success": True,
@@ -1027,6 +1045,14 @@ async def reject_request(request_id: int, rejection_data: RejectionRequest, empl
             request_id
         ))
         
+        # ⭐ อัพเดท Quote_Header ด้วย
+        quote_no = request.get('quote_no')
+        cursor.execute("""
+            UPDATE Quote_Header
+            SET special_price_status = 'REJECTED'
+            WHERE QuoteNo = ?
+        """, (quote_no,))
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -1034,6 +1060,7 @@ async def reject_request(request_id: int, rejection_data: RejectionRequest, empl
         logger.info(f"✅ Request #{request_id} rejected successfully")
         logger.info(f"   Rejected by: {current_employee_id} ({current_name})")
         logger.info(f"   Reason: {rejection_reason}")
+        logger.info(f"   ✅ Quote_Header updated with status: REJECTED")
         
         return {
             "success": True,
