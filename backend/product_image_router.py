@@ -5,12 +5,20 @@ import os
 import shutil
 from pathlib import Path
 from file_storage_config import get_product_images_folder
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/product-images", tags=["Product Images"])
 
 # โฟลเดอร์เก็บรูปภาพสินค้า (ใช้ config)
 IMAGES_DIR = Path(get_product_images_folder())
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+logger.info(f"✅ Product images folder initialized: {IMAGES_DIR}")
+logger.info(f"   Absolute path: {IMAGES_DIR.absolute()}")
+logger.info(f"   Exists: {IMAGES_DIR.exists()}")
+logger.info(f"   Is writable: {os.access(IMAGES_DIR, os.W_OK)}")
 
 # รองรับไฟล์ประเภทนี้
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -23,9 +31,14 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
     - sku: รหัสสินค้า (SKU)
     - file: ไฟล์รูปภาพ
     """
+    logger.info(f"🖼️ Uploading image for SKU: {sku}")
+    logger.info(f"   Filename: {file.filename}")
+    logger.info(f"   Content-Type: {file.content_type}")
+    
     # ตรวจสอบนามสกุลไฟล์
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in ALLOWED_EXTENSIONS:
+        logger.warning(f"❌ Invalid file extension: {file_ext}")
         raise HTTPException(
             status_code=400,
             detail=f"ไฟล์ต้องเป็นประเภท: {', '.join(ALLOWED_EXTENSIONS)}"
@@ -35,18 +48,26 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
     filename = f"{sku}{file_ext}"
     file_path = IMAGES_DIR / filename
     
+    logger.info(f"   Saving as: {filename}")
+    logger.info(f"   Full path: {file_path}")
+    
     try:
         # บันทึกไฟล์
         with file_path.open("wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
+        logger.info(f"✅ Image uploaded successfully")
+        logger.info(f"   File size: {file_path.stat().st_size} bytes")
+        
         return {
             "success": True,
             "message": f"อัปโหลดรูปภาพสำหรับ SKU: {sku} สำเร็จ",
             "filename": filename,
-            "url": f"/static/product-images/{filename}"
+            "url": f"/static/product-images/{filename}",
+            "file_path": str(file_path)
         }
     except Exception as e:
+        logger.error(f"❌ Error uploading image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"เกิดข้อผิดพลาด: {str(e)}")
 
 
@@ -60,9 +81,11 @@ async def get_product_image(sku: str):
     for ext in ALLOWED_EXTENSIONS:
         file_path = IMAGES_DIR / f"{sku}{ext}"
         if file_path.exists():
+            logger.info(f"📁 Found image for SKU {sku}: {file_path}")
             return FileResponse(file_path)
     
     # ถ้าไม่เจอ ส่ง 404
+    logger.warning(f"⚠️ Image not found for SKU: {sku}")
     raise HTTPException(status_code=404, detail=f"ไม่พบรูปภาพสำหรับ SKU: {sku}")
 
 
@@ -78,10 +101,12 @@ async def delete_product_image(sku: str):
         file_path = IMAGES_DIR / f"{sku}{ext}"
         if file_path.exists():
             file_path.unlink()
+            logger.info(f"🗑️ Deleted image for SKU {sku}: {file_path}")
             deleted = True
             break
     
     if not deleted:
+        logger.warning(f"⚠️ Image not found for SKU: {sku}")
         raise HTTPException(status_code=404, detail=f"ไม่พบรูปภาพสำหรับ SKU: {sku}")
     
     return {
@@ -105,6 +130,7 @@ async def list_product_images():
                 "url": f"/api/product-images/{sku}"
             })
     
+    logger.info(f"📊 Listed {len(images)} product images")
     return {
         "total": len(images),
         "images": images

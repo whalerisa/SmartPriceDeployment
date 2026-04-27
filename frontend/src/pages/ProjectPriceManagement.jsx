@@ -627,15 +627,26 @@ const ProjectPriceManagement = () => {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      await api.post(`/api/project-files/upload/${projectId}`, formData, {
+      const response = await api.post(`/api/project-files/upload/${projectId}`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
       });
 
       console.log('✅ File uploaded successfully');
+      console.log('📁 File path:', response.data?.file_path);
+      console.log('📊 Response:', response.data);
+      
+      // แสดง success message พร้อม path
+      if (response.data?.file_path) {
+        alert(`✅ ไฟล์อัพโหลดสำเร็จ\n📁 บันทึกไปที่: ${response.data.file_path}`);
+      }
+      
+      setSelectedFile(null);
     } catch (err) {
       console.error('❌ Error uploading file:', err);
+      const errorMsg = err.response?.data?.detail || err.message || 'เกิดข้อผิดพลาดในการอัพโหลด';
+      alert(`❌ ข้อผิดพลาด: ${errorMsg}`);
     } finally {
       setUploadingFile(false);
     }
@@ -1670,19 +1681,24 @@ const ProjectPriceManagement = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  แนบไฟล์ภาพ
+                  แนบไฟล์โครงการ
                 </label>
                 <input
                   type="file"
-                  accept="image/*"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      setFormData({...formData, attachment: file});
+                      setSelectedFile(file);
+                      console.log('📁 File selected:', file.name, `(${(file.size / 1024).toFixed(2)} KB)`);
                     }
                   }}
                   className="w-full border rounded-lg px-3 py-2 text-sm"
                 />
+                {selectedFile && (
+                  <p className="text-sm text-green-600 mt-1">
+                    ✅ เลือกไฟล์: {selectedFile.name}
+                  </p>
+                )}
               </div>
 
               <div className="relative" ref={employeeDropdownRef}>
