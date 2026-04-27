@@ -122,9 +122,53 @@ function AdminConfig() {
     }
   };
 
+  const validateFolderPath = async (folderPath) => {
+    try {
+      const response = await api.post("/api/config/validate-folder", {
+        folder_path: folderPath,
+      });
+      return response.data;
+    } catch (err) {
+      console.error("Folder validation error:", err);
+      return {
+        is_valid: false,
+        message: err.response?.data?.message || "ไม่สามารถตรวจสอบโฟลเดอร์ได้",
+      };
+    }
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
+      
+      // Validate folder paths before saving
+      if (editedConfig?.system_config?.project_files_folder) {
+        const projectFilesValidation = await validateFolderPath(
+          editedConfig.system_config.project_files_folder
+        );
+        if (!projectFilesValidation.is_valid) {
+          setMessage({
+            type: "error",
+            text: `❌ โฟลเดอร์ไฟล์โครงการไม่ถูกต้อง: ${projectFilesValidation.message}`,
+          });
+          setSaving(false);
+          return;
+        }
+      }
+      
+      if (editedConfig?.system_config?.product_images_folder) {
+        const productImagesValidation = await validateFolderPath(
+          editedConfig.system_config.product_images_folder
+        );
+        if (!productImagesValidation.is_valid) {
+          setMessage({
+            type: "error",
+            text: `❌ โฟลเดอร์รูปภาพสินค้าไม่ถูกต้อง: ${productImagesValidation.message}`,
+          });
+          setSaving(false);
+          return;
+        }
+      }
       
       // Save main config
       await api.put("/api/config/settings", editedConfig);
@@ -167,7 +211,7 @@ function AdminConfig() {
       
       setMessage({
         type: "success",
-        text: "บันทึกการตั้งค่าสำเร็จ",
+        text: "บันทึกการตั้งค่าสำเร็จ ✅",
       });
       setTimeout(() => setMessage(null), 3000);
     } catch (err) {
@@ -1021,6 +1065,9 @@ function AdminConfig() {
                       <p className="text-xs text-gray-500 mt-2">
                         💡 ใช้ path แบบ relative (./) หรือ absolute (C:/) ก็ได้
                       </p>
+                      <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                        <strong>ค่าปัจจุบัน:</strong> {config?.system_config?.project_files_folder || "./uploads/project_files"}
+                      </div>
                     </div>
 
                     {/* Product Images Folder */}
@@ -1047,6 +1094,9 @@ function AdminConfig() {
                       <p className="text-xs text-gray-500 mt-2">
                         💡 ใช้ path แบบ relative (./) หรือ absolute (C:/) ก็ได้
                       </p>
+                      <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                        <strong>ค่าปัจจุบัน:</strong> {config?.system_config?.product_images_folder || "./uploads/product_images"}
+                      </div>
                     </div>
                   </div>
                 </div>

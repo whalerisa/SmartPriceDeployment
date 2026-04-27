@@ -48,45 +48,53 @@ class RejectionRequest(BaseModel):
 # === HELPER FUNCTIONS ===
 
 async def get_config_settings() -> Dict[str, Any]:
-    """Get config settings from database"""
+    """Get config settings from cache or environment"""
     try:
-        conn = get_mssql_conn()
-        cursor = conn.cursor()
+        from config_cache import get_role_approval_scope
         
-        cursor.execute("""
-            SELECT config_value FROM system_config
-            WHERE config_key = 'price_approval_config'
-        """)
+        # Load role_approval_scope from cache (which reads from .env or JSON file)
+        role_approval_scope = get_role_approval_scope()
         
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        logger.info(f"✅ Loaded role_approval_scope from cache: {role_approval_scope}")
         
-        if row:
-            config_str = row[0]
-            return json.loads(config_str)
-        else:
-            # Return default config if not found
-            logger.warning("Config not found in database, using default values")
-            return get_default_config()
+        return {
+            "price_config": {
+                "role_approval_scope": role_approval_scope
+            }
+        }
     except Exception as e:
         logger.error(f"Error getting config: {e}")
         return get_default_config()
 
 
 def get_default_config() -> Dict[str, Any]:
-    """Get default config (fallback)"""
-    return {
-        "price_config": {
-            "role_approval_scope": {
-                "Sales": {"min_level": "R1"},
-                "ZM": {"min_level": "R1", "max_level": "W2"},
-                "RM": {"min_level": "W2", "max_level": "W1"},
-                "SDM": {"min_level": "W1", "max_level": "SDM"},
-                "PM": {"min_level": "SDM"}
+    """Get default config (fallback) - loads from config_cache"""
+    try:
+        from config_cache import get_role_approval_scope
+        
+        role_approval_scope = get_role_approval_scope()
+        logger.info(f"✅ Default config loaded from cache: {role_approval_scope}")
+        
+        return {
+            "price_config": {
+                "role_approval_scope": role_approval_scope
             }
         }
-    }
+    except Exception as e:
+        logger.error(f"Error loading default config from cache: {e}")
+        # Hardcoded fallback (should rarely be used)
+        return {
+            "price_config": {
+                "role_approval_scope": {
+                    "Sales": {"min_level": "R2", "max_level": "R2"},
+                    "ZM": {"min_level": "R1", "max_level": "W2"},
+                    "RM": {"min_level": "W2", "max_level": "W1"},
+                    "SDM": {"min_level": "W1", "max_level": "SDM"},
+                    "PM": {"min_level": "R2", "max_level": "SDM"},
+                    "CEO": {"min_level": "R2", "max_level": "SDM"}
+                }
+            }
+        }
 
 
 def price_level_order() -> Dict[str, int]:

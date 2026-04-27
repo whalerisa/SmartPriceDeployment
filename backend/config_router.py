@@ -93,6 +93,93 @@ def test_api_connection(url: str, headers: dict, timeout: int = 5) -> tuple[bool
     return False, "API testing disabled for security"
 
 
+def _update_env_file(updates: Dict[str, str]) -> None:
+    """
+    Update .env file with new values.
+    
+    Args:
+        updates: Dictionary of key-value pairs to update in .env file
+    """
+    # Find .env file
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), ".env"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.getcwd(), "backend", ".env"),
+        ".env",
+    ]
+    
+    env_file = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            env_file = path
+            break
+    
+    if not env_file:
+        logger.warning(f"⚠️ .env file not found in any of the expected locations: {possible_paths}")
+        return
+    
+    try:
+        # Read current .env file
+        lines = []
+        env_content = {}
+        
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped and "=" in stripped and not stripped.startswith("#"):
+                    key, value = stripped.split("=", 1)
+                    env_content[key.strip()] = value.strip()
+                lines.append(line)
+        
+        # Update with new values
+        env_content.update(updates)
+        
+        # Write back to file - preserve structure and comments
+        with open(env_file, "w", encoding="utf-8") as f:
+            for line in lines:
+                stripped = line.strip()
+                
+                # Skip empty lines and comments
+                if not stripped or stripped.startswith("#"):
+                    f.write(line)
+                    continue
+                
+                # Update key-value pairs
+                if "=" in stripped:
+                    key, _ = stripped.split("=", 1)
+                    key = key.strip()
+                    
+                    if key in updates:
+                        # Write updated value
+                        f.write(f"{key}={updates[key]}\n")
+                    else:
+                        # Keep original value
+                        f.write(line)
+                else:
+                    f.write(line)
+            
+            # Add any new keys that weren't in the original file
+            for key, value in updates.items():
+                if key not in env_content or env_content[key] != value:
+                    # Check if key was already written
+                    found = False
+                    for line in lines:
+                        if line.strip().startswith(f"{key}="):
+                            found = True
+                            break
+                    
+                    if not found:
+                        f.write(f"{key}={value}\n")
+        
+        logger.info(f"✅ .env file updated successfully: {env_file}")
+        logger.info(f"📝 Updated keys: {list(updates.keys())}")
+    
+    except Exception as e:
+        logger.error(f"❌ Failed to update .env file: {e}")
+        raise
+
+
 # ==================== Endpoints ====================
 
 @router.get("/test")
@@ -223,8 +310,8 @@ async def update_config(
         import json
         from config_cache import set_page_access_config, set_role_approval_scope
         
-        # Update environment variables (in-memory only, not persisted)
-        # For production, you should update .env file or use a database
+        # Track which env vars need to be persisted to .env file
+        env_updates = {}
         
         # ⚠️ API configurations are NOT updatable via this endpoint for security reasons
         # API URLs and keys should be managed through environment variables or .env file
@@ -233,44 +320,60 @@ async def update_config(
             price_cfg = config_data["price_config"]
             if "sdm_threshold_price" in price_cfg:
                 os.environ["SDM_THRESHOLD_PRICE"] = str(price_cfg["sdm_threshold_price"])
+                env_updates["SDM_THRESHOLD_PRICE"] = str(price_cfg["sdm_threshold_price"])
             
             # Store role_approval_scope in cache (immediate effect)
             if "role_approval_scope" in price_cfg:
                 set_role_approval_scope(price_cfg["role_approval_scope"])
                 # Also store in environment for persistence
                 os.environ["ROLE_APPROVAL_SCOPE"] = json.dumps(price_cfg["role_approval_scope"])
+                env_updates["ROLE_APPROVAL_SCOPE"] = json.dumps(price_cfg["role_approval_scope"])
         
         if "access_control" in config_data:
             ac = config_data["access_control"]
             if "price_update_employees" in ac:
                 os.environ["ALLOWED_PRICE_UPDATE_EMPLOYEES"] = ",".join(ac["price_update_employees"])
+                env_updates["ALLOWED_PRICE_UPDATE_EMPLOYEES"] = ",".join(ac["price_update_employees"])
             if "project_price_employees" in ac:
                 os.environ["ALLOWED_PROJECT_PRICE_EMPLOYEES"] = ",".join(ac["project_price_employees"])
+                env_updates["ALLOWED_PROJECT_PRICE_EMPLOYEES"] = ",".join(ac["project_price_employees"])
             if "special_price_approvers" in ac:
                 os.environ["ALLOWED_SPECIAL_PRICE_APPROVERS"] = ",".join(ac["special_price_approvers"])
+                env_updates["ALLOWED_SPECIAL_PRICE_APPROVERS"] = ",".join(ac["special_price_approvers"])
             
             # Store page_access configuration in cache (immediate effect)
             if "page_access" in ac:
                 set_page_access_config(ac["page_access"])
                 # Also store in environment for persistence
                 os.environ["PAGE_ACCESS_CONFIG"] = json.dumps(ac["page_access"])
+                env_updates["PAGE_ACCESS_CONFIG"] = json.dumps(ac["page_access"])
         
         if "system_config" in config_data:
             sys_cfg = config_data["system_config"]
             if "timezone" in sys_cfg:
                 os.environ["TIMEZONE"] = sys_cfg["timezone"]
+                env_updates["TIMEZONE"] = sys_cfg["timezone"]
             if "language" in sys_cfg:
                 os.environ["LANGUAGE"] = sys_cfg["language"]
+                env_updates["LANGUAGE"] = sys_cfg["language"]
             if "vat_rate" in sys_cfg:
                 os.environ["VAT_RATE"] = str(sys_cfg["vat_rate"])
+                env_updates["VAT_RATE"] = str(sys_cfg["vat_rate"])
             if "project_code_mode" in sys_cfg:
                 os.environ["PROJECT_CODE_MODE"] = sys_cfg["project_code_mode"]
+                env_updates["PROJECT_CODE_MODE"] = sys_cfg["project_code_mode"]
             if "project_files_folder" in sys_cfg:
                 os.environ["PROJECT_FILES_FOLDER"] = sys_cfg["project_files_folder"]
+                env_updates["PROJECT_FILES_FOLDER"] = sys_cfg["project_files_folder"]
             if "product_images_folder" in sys_cfg:
                 os.environ["PRODUCT_IMAGES_FOLDER"] = sys_cfg["product_images_folder"]
+                env_updates["PRODUCT_IMAGES_FOLDER"] = sys_cfg["product_images_folder"]
         
-        logger.info(f"Config updated by {employee.get('employee_id')}")
+        # Persist changes to .env file
+        if env_updates:
+            _update_env_file(env_updates)
+        
+        logger.info(f"Config updated by {employee.get('employee_id')}: {list(env_updates.keys())}")
         
         return {
             "success": True,
@@ -753,4 +856,67 @@ async def update_region_manager(
     except Exception as e:
         logger.error(f"Error updating region manager: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== Folder Path Validation Endpoints ====================
+
+class FolderValidationRequest(BaseModel):
+    """Request to validate folder path"""
+    folder_path: str
+
+
+class FolderValidationResponse(BaseModel):
+    """Response from folder validation"""
+    is_valid: bool
+    message: str
+    absolute_path: Optional[str] = None
+
+
+@router.post("/validate-folder", response_model=FolderValidationResponse)
+async def validate_folder_path(
+    request: FolderValidationRequest,
+    employee: dict = Depends(get_current_employee)
+):
+    """
+    Validate if a folder path is valid and writable.
+    Only accessible to admin users.
+    
+    Request body:
+    {
+        "folder_path": "./uploads/project_files"
+    }
+    """
+    if not check_admin_role(employee):
+        raise HTTPException(status_code=403, detail="Only admin can validate folders")
+    
+    try:
+        from file_storage_config import FileStorageConfig
+        
+        folder_path = request.folder_path.strip()
+        if not folder_path:
+            return FolderValidationResponse(
+                is_valid=False,
+                message="Folder path cannot be empty"
+            )
+        
+        is_valid, message = FileStorageConfig.validate_folder_path(folder_path)
+        
+        # Get absolute path
+        from pathlib import Path
+        path = Path(folder_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        
+        return FolderValidationResponse(
+            is_valid=is_valid,
+            message=message,
+            absolute_path=str(path)
+        )
+    
+    except Exception as e:
+        logger.error(f"Error validating folder: {str(e)}")
+        return FolderValidationResponse(
+            is_valid=False,
+            message=f"Error validating folder: {str(e)}"
+        )
 
