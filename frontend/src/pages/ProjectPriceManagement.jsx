@@ -618,8 +618,8 @@ const ProjectPriceManagement = () => {
     alert(`เพิ่มรายการสินค้า (${matchedSkus.length} SKUs) เรียบร้อยแล้ว`);
   };
 
-  // ⭐ อัปโหลดไฟล์โครงการ (เก็บที่ folder เฉยๆ ไม่บันทึก path)
-  const handleFileUpload = async (projectId) => {
+  // ⭐ อัปโหลดไฟล์โครงการ (เก็บที่ folder ตามรหัสโครงการ)
+  const handleFileUpload = async (projectCode) => {
     if (!selectedFile) return;
 
     try {
@@ -627,7 +627,7 @@ const ProjectPriceManagement = () => {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const response = await api.post(`/api/project-files/upload/${projectId}`, formData, {
+      const response = await api.post(`/api/project-files/upload/${projectCode}`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -719,11 +719,12 @@ const ProjectPriceManagement = () => {
 
       if (editingProjectId) {
         // Update existing project
-        await api.put(`/api/project-prices/${editingProjectId}`, payload);
+        const response = await api.put(`/api/project-prices/${editingProjectId}`, payload);
+        const projectCode = response.data?.project_code || formData.project_code;
         
-        // ⭐ อัปโหลดไฟล์ถ้ามี (เก็บที่ folder เฉยๆ ไม่บันทึก path)
-        if (selectedFile) {
-          await handleFileUpload(editingProjectId);
+        // ⭐ อัปโหลดไฟล์ถ้ามี (เก็บที่ folder ตามรหัสโครงการ)
+        if (selectedFile && projectCode) {
+          await handleFileUpload(projectCode);
         }
         
         alert('อัพเดทราคาโครงการเรียบร้อยแล้ว');
@@ -732,11 +733,10 @@ const ProjectPriceManagement = () => {
         // Create new project - เลขที่จะถูกสร้างโดย backend
         const response = await api.post('/api/project-prices/', payload);
         const generatedCode = response.data?.project_code || 'สร้างสำเร็จ';
-        const projectId = response.data?.project_id;
         
-        // ⭐ อัปโหลดไฟล์ถ้ามี (เก็บที่ folder เฉยๆ ไม่บันทึก path)
-        if (selectedFile && projectId) {
-          await handleFileUpload(projectId);
+        // ⭐ อัปโหลดไฟล์ถ้ามี (เก็บที่ folder ตามรหัสโครงการ)
+        if (selectedFile && generatedCode && generatedCode !== 'สร้างสำเร็จ') {
+          await handleFileUpload(generatedCode);
         }
         
         alert(`บันทึกราคาโครงการเรียบร้อยแล้ว\nเลขที่ใบคำขอ: ${generatedCode}`);

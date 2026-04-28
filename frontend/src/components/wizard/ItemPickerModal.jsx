@@ -194,7 +194,7 @@ function ItemPickerModal({ open, category, onClose, onConfirm }) {
   // ⭐ ไม่ต้อง filter ฝั่ง client แล้ว เพราะ backend filter ให้แล้ว
   const filteredItems = items;
 
-  // ⭐ โหลด related items แยกจาก backend (เร็ว)
+  // ⭐ โหลด related items แยกจาก backend (เร็ว) + ส่ง filter ไปด้วย
   const loadRelatedItems = async (item) => {
     if (!item?.product_group) {
       setRelatedItems([]);
@@ -203,7 +203,46 @@ function ItemPickerModal({ open, category, onClose, onConfirm }) {
 
     setLoadingRelated(true);
     try {
-      const res = await api.get(`/api/items/related/${item.sku || item.SKU}`);
+      // ⭐ สร้าง filter params ตาม category
+      const filterParams = {};
+      
+      if (category === "A") {
+        if (aluFilter.brand) filterParams.brand = aluFilter.brand;
+        if (aluFilter.group) filterParams.group = aluFilter.group;
+        if (aluFilter.subGroup) filterParams.subGroup = aluFilter.subGroup;
+        if (aluFilter.color) filterParams.color = aluFilter.color;
+        if (aluFilter.thickness) filterParams.thickness = aluFilter.thickness;
+      } else if (category === "C") {
+        if (clineFilter.brand) filterParams.brand = clineFilter.brand;
+        if (clineFilter.group) filterParams.group = clineFilter.group;
+        if (clineFilter.subGroup) filterParams.subGroup = clineFilter.subGroup;
+        if (clineFilter.color) filterParams.color = clineFilter.color;
+        if (clineFilter.thickness) filterParams.thickness = clineFilter.thickness;
+      } else if (category === "E") {
+        if (accFilter.brand) filterParams.brand = accFilter.brand;
+        if (accFilter.group) filterParams.group = accFilter.group;
+        if (accFilter.subGroup) filterParams.subGroup = accFilter.subGroup;
+        if (accFilter.color) filterParams.color = accFilter.color;
+        if (accFilter.character) filterParams.character = accFilter.character;
+      } else if (category === "S") {
+        if (sealantFilter.brand) filterParams.brand = sealantFilter.brand;
+        if (sealantFilter.group) filterParams.group = sealantFilter.group;
+        if (sealantFilter.subGroup) filterParams.subGroup = sealantFilter.subGroup;
+        if (sealantFilter.color) filterParams.color = sealantFilter.color;
+      } else if (category === "Y") {
+        if (gypsumFilter.brand) filterParams.brand = gypsumFilter.brand;
+        if (gypsumFilter.group) filterParams.group = gypsumFilter.group;
+        if (gypsumFilter.subGroup) filterParams.subGroup = gypsumFilter.subGroup;
+        if (gypsumFilter.color) filterParams.color = gypsumFilter.color;
+        if (gypsumFilter.thickness) filterParams.thickness = gypsumFilter.thickness;
+      }
+
+      const res = await api.get(`/api/items/related/${item.sku || item.SKU}`, {
+        params: {
+          category,  // ⭐ ส่ง category ไปด้วย
+          ...filterParams
+        }
+      });
       setRelatedItems(res.data.items || []);
     } catch (err) {
       console.error("Load related items error:", err);

@@ -31,19 +31,19 @@ logger.info(f"   Is writable: {os.access(FILES_DIR, os.W_OK)}")
 ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar", ".txt", ".jpg", ".jpeg", ".png"}
 
 
-@router.post("/upload/{project_id}")
-async def upload_project_file(project_id: str, file: UploadFile = File(...)):
+@router.post("/upload/{project_code}")
+async def upload_project_file(project_code: str, file: UploadFile = File(...)):
     """
     อัปโหลดไฟล์โครงการ
     
     Args:
-        project_id: รหัสโครงการ
+        project_code: รหัสโครงการ (เช่น PJ6904016)
         file: ไฟล์ที่ต้องการอัปโหลด
     
     Returns:
         {"success": bool, "message": str, "file_path": str}
     """
-    logger.info(f"📁 Uploading file for project: {project_id}")
+    logger.info(f"📁 Uploading file for project: {project_code}")
     logger.info(f"   Filename: {file.filename}")
     logger.info(f"   Content-Type: {file.content_type}")
     
@@ -56,8 +56,8 @@ async def upload_project_file(project_id: str, file: UploadFile = File(...)):
             detail=f"ไฟล์ต้องเป็นประเภท: {', '.join(ALLOWED_EXTENSIONS)}"
         )
     
-    # สร้างโฟลเดอร์สำหรับโครงการ
-    project_dir = FILES_DIR / project_id
+    # สร้างโฟลเดอร์สำหรับโครงการ (ตามรหัสโครงการ)
+    project_dir = FILES_DIR / project_code
     project_dir.mkdir(parents=True, exist_ok=True)
     
     logger.info(f"   Project directory: {project_dir}")
@@ -65,9 +65,8 @@ async def upload_project_file(project_id: str, file: UploadFile = File(...)):
     logger.info(f"   Exists: {project_dir.exists()}")
     logger.info(f"   Is writable: {os.access(project_dir, os.W_OK)}")
     
-    # สร้างชื่อไฟล์ที่ไม่ซ้ำ (เพิ่ม timestamp)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_{file.filename}"
+    # ใช้ชื่อไฟล์เดิม
+    filename = file.filename
     file_path = project_dir / filename
     
     logger.info(f"   Saving as: {filename}")
@@ -83,7 +82,7 @@ async def upload_project_file(project_id: str, file: UploadFile = File(...)):
         
         return {
             "success": True,
-            "message": f"อัปโหลดไฟล์สำหรับโครงการ {project_id} สำเร็จ",
+            "message": f"อัปโหลดไฟล์สำหรับโครงการ {project_code} สำเร็จ",
             "file_path": str(file_path),
             "relative_path": str(file_path.relative_to(FILES_DIR.parent) if FILES_DIR.parent in file_path.parents else file_path)
         }

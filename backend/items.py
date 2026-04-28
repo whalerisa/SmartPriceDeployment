@@ -611,7 +611,19 @@ def get_item_detail(sku: str, branch_code: str = Depends(get_branch_code)):
 
 
 @router.get("/related/{sku}") #ดึงสินค้าที่Group เดียวกัน
-def get_related_items(sku: str, limit: int = 50, branch_code: str = Depends(get_branch_code)):
+@router.get("/related/{sku}")
+def get_related_items(
+    sku: str,
+    category: str = None,  # ⭐ เพิ่ม category parameter
+    limit: int = 50,
+    brand: str = None,
+    group: str = None,
+    subGroup: str = None,
+    color: str = None,
+    thickness: str = None,
+    character: str = None,
+    branch_code: str = Depends(get_branch_code)
+):
     conn = get_mssql_conn()
     cursor = conn.cursor()
 
@@ -630,7 +642,7 @@ def get_related_items(sku: str, limit: int = 50, branch_code: str = Depends(get_
 
     product_group = row[0]
 
-    # ดึงสินค้าใน Product Group เดียวกัน (LIGHT - เฉพาะข้อมูลที่จำเป็น)
+    # ดึงสินค้าใน Product Group เดียวกัน พร้อม filter
     sql = f"""
         SELECT TOP {limit}
             im.SKU,
@@ -644,9 +656,103 @@ def get_related_items(sku: str, limit: int = 50, branch_code: str = Depends(get_
           AND im.SKU != ?
           AND (im.No_2 IS NULL OR im.No_2 != ?)
           AND im.Blocked = 0
-        ORDER BY im.SKU
     """
-    cursor.execute(sql, product_group, sku, sku)
+    
+    params = [product_group, sku, sku]
+    
+    # ⭐ เพิ่ม filter conditions ตามหมวดหมู่ (ใช้ position ที่ถูก)
+    # SKU Format:
+    # A: ABBGGSSSCCDD (Aluminium)
+    # C: CBBGGSSSCCDD (C-Line)
+    # E: EBBGGSSCCX (Accessories)
+    # S: SBBGGSSSCC (Sealant)
+    # Y: YBBGGSSCCCDD (Gypsum)
+    
+    if category == "A":  # Aluminium: ABBGGSSSCCDD
+        if brand:
+            sql += " AND SUBSTRING(im.SKU, 2, 2) = ?"
+            params.append(brand)
+        if group:
+            sql += " AND SUBSTRING(im.SKU, 4, 2) = ?"
+            params.append(group)
+        if subGroup:
+            sql += " AND SUBSTRING(im.SKU, 6, 3) = ?"
+            params.append(subGroup)
+        if color:
+            sql += " AND SUBSTRING(im.SKU, 9, 2) = ?"
+            params.append(color)
+        if thickness:
+            sql += " AND SUBSTRING(im.SKU, 11, 2) = ?"
+            params.append(thickness)
+    
+    elif category == "C":  # C-Line: CBBGGSSSCCDD
+        if brand:
+            sql += " AND SUBSTRING(im.SKU, 2, 2) = ?"
+            params.append(brand)
+        if group:
+            sql += " AND SUBSTRING(im.SKU, 4, 2) = ?"
+            params.append(group)
+        if subGroup:
+            sql += " AND SUBSTRING(im.SKU, 6, 3) = ?"
+            params.append(subGroup)
+        if color:
+            sql += " AND SUBSTRING(im.SKU, 9, 2) = ?"
+            params.append(color)
+        if thickness:
+            sql += " AND SUBSTRING(im.SKU, 11, 2) = ?"
+            params.append(thickness)
+    
+    elif category == "E":  # Accessories: EBBGGSSCCX
+        if brand:
+            sql += " AND SUBSTRING(im.SKU, 2, 2) = ?"
+            params.append(brand)
+        if group:
+            sql += " AND SUBSTRING(im.SKU, 4, 2) = ?"
+            params.append(group)
+        if subGroup:
+            sql += " AND SUBSTRING(im.SKU, 6, 2) = ?"
+            params.append(subGroup)
+        if color:
+            sql += " AND SUBSTRING(im.SKU, 8, 2) = ?"
+            params.append(color)
+        if character:
+            sql += " AND SUBSTRING(im.SKU, 10, 1) = ?"
+            params.append(character)
+    
+    elif category == "S":  # Sealant: SBBGGSSSCC
+        if brand:
+            sql += " AND SUBSTRING(im.SKU, 2, 2) = ?"
+            params.append(brand)
+        if group:
+            sql += " AND SUBSTRING(im.SKU, 4, 2) = ?"
+            params.append(group)
+        if subGroup:
+            sql += " AND SUBSTRING(im.SKU, 6, 3) = ?"
+            params.append(subGroup)
+        if color:
+            sql += " AND SUBSTRING(im.SKU, 9, 2) = ?"
+            params.append(color)
+    
+    elif category == "Y":  # Gypsum: YBBGGSSCCCDD
+        if brand:
+            sql += " AND SUBSTRING(im.SKU, 2, 2) = ?"
+            params.append(brand)
+        if group:
+            sql += " AND SUBSTRING(im.SKU, 4, 2) = ?"
+            params.append(group)
+        if subGroup:
+            sql += " AND SUBSTRING(im.SKU, 6, 2) = ?"
+            params.append(subGroup)
+        if color:
+            sql += " AND SUBSTRING(im.SKU, 8, 3) = ?"
+            params.append(color)
+        if thickness:
+            sql += " AND SUBSTRING(im.SKU, 11, 2) = ?"
+            params.append(thickness)
+    
+    sql += " ORDER BY im.SKU"
+    
+    cursor.execute(sql, *params)
     rows = cursor.fetchall()
     conn.close()
 
