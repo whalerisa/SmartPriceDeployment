@@ -116,7 +116,7 @@ async def get_remaining_credit(customer_id: str):
         logger.info(f"🔍 [REMAINING CREDIT API] Headers: {REMAININGCREDIT_HEADERS}")
         logger.info(f"🔍 [REMAINING CREDIT API] Customer ID: {customer_id}")
         
-        # ⭐ ใช้ GET method
+        # ⭐ ใช้ GET method (API ส่งข้อมูลทั้งหมดมา)
         response = requests.get(
             REMAININGCREDIT_URL,
             headers=REMAININGCREDIT_HEADERS,
@@ -132,6 +132,25 @@ async def get_remaining_credit(customer_id: str):
         data = response.json()
         
         logger.info(f"✅ [REMAINING CREDIT API] Success! Data keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+        
+        # ⭐ Filter ข้อมูลตาม customer_id
+        if isinstance(data, dict) and "data" in data:
+            all_customers = data["data"]
+            # หาลูกค้าที่ตรงกับ customer_id
+            filtered_data = [
+                customer for customer in all_customers 
+                if customer.get("Customer No.") == customer_id or 
+                   customer.get("Customer_No") == customer_id or
+                   customer.get("customer_id") == customer_id
+            ]
+            
+            if filtered_data:
+                logger.info(f"✅ Found customer data for {customer_id}")
+                return {"data": filtered_data}
+            else:
+                logger.warning(f"⚠️ No data found for customer {customer_id}")
+                return {"data": []}
+        
         return data
             
     except requests.HTTPError as e:

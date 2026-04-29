@@ -376,9 +376,11 @@ function CustomerDetail() {
   // ใช้ข้อมูลจาก API ถ้ามี ไม่งั้นใส่ 0 (สำหรับลูกค้าเงินสด)
   const displayCredit = creditData ? {
     creditLimit: creditData.credit_limit || 0,
-    creditUsed: remainingCreditData?.data?.[0]?.["Remaining Credit"] 
-      ? (creditData.credit_limit || 0) - parseFloat(remainingCreditData.data[0]["Remaining Credit"])
+    // ⭐ ยอดที่ใช้ไป = Total utilization จาก API (เอาค่าตรงๆ)
+    creditUsed: remainingCreditData?.data?.[0]?.["Total Utilization"]
+      ? parseFloat(remainingCreditData.data[0]["Total Utilization"])
       : (creditData.credit_limit || 0) - (creditData.credit_available || 0),
+    // ⭐ เหลือวงเงิน = Remaining Credit จาก API (เอาค่าตรงๆ)
     creditAvailable: remainingCreditData?.data?.[0]?.["Remaining Credit"]
       ? parseFloat(remainingCreditData.data[0]["Remaining Credit"])
       : (creditData.credit_available || 0),
