@@ -8,7 +8,7 @@ function AdminConfig() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("price");
+  const [activeTab, setActiveTab] = useState("access");
   const [config, setConfig] = useState(null);
   const [editedConfig, setEditedConfig] = useState(null);
   const [message, setMessage] = useState(null);
@@ -280,16 +280,6 @@ function AdminConfig() {
           {/* Tab Navigation */}
           <div className="flex border-b border-gray-200">
             <button
-              onClick={() => setActiveTab("price")}
-              className={`px-6 py-4 font-medium transition-colors ${
-                activeTab === "price"
-                  ? "text-blue-600 border-b-2 border-blue-600"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
-            >
-              💰 ระดับราคาอนุมัติ
-            </button>
-            <button
               onClick={() => setActiveTab("access")}
               className={`px-6 py-4 font-medium transition-colors ${
                 activeTab === "access"
@@ -323,294 +313,6 @@ function AdminConfig() {
 
           {/* Tab Content */}
           <div className="p-6">
-            {/* Price Approval Tab */}
-            {activeTab === "price" && (
-              <div>
-
-          {/* Price Approval Levels Configuration */}
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">ขอบเขตการอนุมัติราคาตาม Role</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              กำหนดขอบเขตการอนุมัติราคาสำหรับแต่ละ Role โดยใช้ระดับราคา (Price Levels)
-            </p>
-
-            {/* Approval Logic Reference */}
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 className="font-semibold text-blue-900 mb-2">📋 ลำดับการอนุมัติ</h4>
-              <div className="text-xs text-gray-700 space-y-1">
-                <p>• <strong>ราคา ≥ R1</strong>: ไม่ต้องขออนุมัติ</p>
-                <p>• <strong>R1 &gt; ราคา ≥ W2</strong>: ZM_ONLY (อนุมัติจาก ZM เท่านั้น)</p>
-                <p>• <strong>W2 &gt; ราคา ≥ W1</strong>: ZM_THEN_RM (ต้องผ่าน ZM → RM)</p>
-                <p>• <strong>W1 &gt; ราคา ≥ SDM</strong>: SDM_APPROVAL (ต้องผ่าน ZM → RM → SDM)</p>
-                <p>• <strong>ราคา &lt; SDM</strong>: PM_APPROVAL (ต้องผ่าน ZM → RM → SDM → PM)</p>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              {/* Sales */}
-              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                <div className="mb-4">
-                  <h4 className="font-semibold text-gray-900">Sales</h4>
-                  <p className="text-xs text-gray-500">ผู้ขายทั่วไป - ไม่ต้องขออนุมัติ</p>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.Sales?.min_level || "R1"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            Sales: {
-                              ...editedConfig.price_config?.role_approval_scope?.Sales,
-                              min_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                  <span className="text-sm text-gray-600">ขึ้นไป</span>
-                </div>
-              </div>
-
-              {/* ZM */}
-              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                <div className="mb-4">
-                  <h4 className="font-semibold text-gray-900">ZM (Zone Manager)</h4>
-                  <p className="text-xs text-gray-500">ผู้จัดการเขต</p>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.ZM?.min_level || "R1"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            ZM: {
-                              ...editedConfig.price_config?.role_approval_scope?.ZM,
-                              min_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                  <span className="text-sm text-gray-600">ถึง</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.ZM?.max_level || "W2"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            ZM: {
-                              ...editedConfig.price_config?.role_approval_scope?.ZM,
-                              max_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* RM */}
-              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                <div className="mb-4">
-                  <h4 className="font-semibold text-gray-900">RM (Regional Manager)</h4>
-                  <p className="text-xs text-gray-500">ผู้จัดการภูมิภาค</p>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.RM?.min_level || "W2"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            RM: {
-                              ...editedConfig.price_config?.role_approval_scope?.RM,
-                              min_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                  <span className="text-sm text-gray-600">ถึง</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.RM?.max_level || "W1"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            RM: {
-                              ...editedConfig.price_config?.role_approval_scope?.RM,
-                              max_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* SDM */}
-              <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
-                <div className="mb-4">
-                  <h4 className="font-semibold text-gray-900">SDM (Sales Director Manager)</h4>
-                  <p className="text-xs text-gray-500">ผู้บริหารฝ่ายขาย</p>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.SDM?.min_level || "W1"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            SDM: {
-                              ...editedConfig.price_config?.role_approval_scope?.SDM,
-                              min_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                  <span className="text-sm text-gray-600">ถึง</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.SDM?.max_level || "SDM"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            SDM: {
-                              ...editedConfig.price_config?.role_approval_scope?.SDM,
-                              max_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* PM */}
-              <div className="border border-gray-300 rounded-lg p-4 bg-blue-50 ">
-                <div className="mb-4">
-                  <h4 className="font-semibold text-gray-900">PM (Product Manager)</h4>
-                  <p className="text-xs text-gray-500">ผู้จัดการสินค้า - อนุมัติราคาต่ำสุด</p>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-sm text-gray-600">อนุมัติราคา:</span>
-                  <select
-                    value={editedConfig?.price_config?.role_approval_scope?.PM?.min_level || "SDM"}
-                    onChange={(e) =>
-                      setEditedConfig({
-                        ...editedConfig,
-                        price_config: {
-                          ...editedConfig.price_config,
-                          role_approval_scope: {
-                            ...editedConfig.price_config?.role_approval_scope,
-                            PM: {
-                              ...editedConfig.price_config?.role_approval_scope?.PM,
-                              min_level: e.target.value,
-                            },
-                          },
-                        },
-                      })
-                    }
-                    className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                  >
-                    <option value="R2">R2</option>
-                    <option value="R1">R1</option>
-                    <option value="W2">W2</option>
-                    <option value="W1">W1</option>
-                    <option value="SDM">SDM</option>
-                  </select>
-                  <span className="text-sm text-gray-600">ลงมา</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-              </div>
-            )}
-
             {/* Access Control Tab */}
             {activeTab === "access" && (
               <div>
@@ -1071,7 +773,7 @@ function AdminConfig() {
                     </div>
 
                     {/* Product Images Folder */}
-                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50">
+                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
                       <div className="mb-4">
                         <h4 className="font-semibold text-gray-900">🖼️ โฟลเดอร์รูปภาพสินค้า</h4>
                         <p className="text-xs text-gray-500">ที่เก็บรูปภาพของสินค้า (Product Images)</p>
@@ -1098,6 +800,8 @@ function AdminConfig() {
                         <strong>ค่าปัจจุบัน:</strong> {config?.system_config?.product_images_folder || "./uploads/product_images"}
                       </div>
                     </div>
+
+
                   </div>
                 </div>
               </div>

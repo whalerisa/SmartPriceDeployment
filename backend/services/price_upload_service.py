@@ -125,16 +125,24 @@ class PriceUploadService:
         
         logger.info(f"Processing {total_rows} price records")
         
+        # ⭐ Batch processing: เก็บ records ไว้ก่อน แล้ว commit ทีเดียว
+        BATCH_SIZE = 100  # Commit ทุก 100 records
+        batch_count = 0
+        
         for idx, row in enumerate(price_data, start=1):
             try:
                 # Use the detected SKU column name
-                sku = row.get(self._sku_column, "").strip()
+                sku_value = row.get(self._sku_column, "")
+                # Convert to string if it's a number
+                if isinstance(sku_value, (int, float)):
+                    sku = str(sku_value).strip()
+                else:
+                    sku = str(sku_value).strip() if sku_value else ""
                 
-                # Skip empty SKU
-                if not sku:
-                    error_msg = f"Row {idx}: Empty SKU"
-                    logger.warning(error_msg)
-                    error_details.append(error_msg)
+                # Skip empty SKU or 'nan' values
+                if not sku or sku.lower() == 'nan':
+                    if idx <= 10:  # Only log first 10 to avoid spam
+                        logger.debug(f"Row {idx}: Skipping empty or NaN SKU")
                     errors += 1
                     continue
                 
@@ -171,9 +179,17 @@ class PriceUploadService:
                     "AlternateName": alternate_name
                 }
                 
-                # Upsert price
-                self._upsert_price(price_record, version_id, idx)  # ⭐ ส่ง version_id และ row index
+                # Upsert price (ไม่ commit ทันที)
+                self._upsert_price(price_record, version_id, idx, auto_commit=False)
                 successful_updates += 1
+                batch_count += 1
+                
+                # ⭐ Batch commit: commit ทุก BATCH_SIZE records
+                if batch_count >= BATCH_SIZE:
+                    self.db_connection.commit()
+                    logger.info(f"Committed batch: {successful_updates}/{total_rows} records")
+                    batch_count = 0
+                
                 logger.debug(f"Successfully processed SKU: {sku}")
             
             except Exception as e:
@@ -182,6 +198,11 @@ class PriceUploadService:
                 error_details.append(error_msg)
                 errors += 1
                 # Continue processing remaining rows
+        
+        # ⭐ Commit remaining records
+        if batch_count > 0:
+            self.db_connection.commit()
+            logger.info(f"Committed final batch: {successful_updates}/{total_rows} records")
         
         # Log summary
         logger.info(
@@ -353,7 +374,13 @@ class PriceUploadService:
             # หา update_type จาก SKU (ตัวอักษรแรก)
             categories = set()
             for row in price_data:
-                sku = row.get(self._sku_column, "").strip()
+                sku_value = row.get(self._sku_column, "")
+                # Convert to string if it's a number
+                if isinstance(sku_value, (int, float)):
+                    sku = str(sku_value).strip()
+                else:
+                    sku = str(sku_value).strip() if sku_value else ""
+                
                 if sku and len(sku) > 0:
                     category = sku[0].upper()
                     if category in ['G', 'A', 'Y', 'S', 'C', 'E']:
@@ -399,7 +426,7 @@ class PriceUploadService:
         finally:
             cursor.close()
     
-    def _upsert_price(self, price_data: Dict, version_id: int, row_index: int):
+    def _upsert_price(self, price_data: Dict, version_id: int, row_index: int, auto_commit: bool = True):
         """
         Insert or update price in Item_Price table และบันทึก detail log
         
@@ -414,6 +441,7 @@ class PriceUploadService:
             price_data: Dictionary with SKU and price fields
             version_id: ID ของ version log
             row_index: ลำดับแถวในไฟล์
+            auto_commit: ถ้า True จะ commit ทันที, ถ้า False จะรอ batch commit (default: True)
         
         Raises:
             Exception: If database operation fails
@@ -427,7 +455,7 @@ class PriceUploadService:
             # ⭐ ดึงราคาเก่าก่อน update
             cursor.execute("""
                 SELECT R1, R2, W1, W2, AlternateName
-                FROM Item_Price
+                FROM Item_Price WITH (NOLOCK)
                 WHERE SKU = ? AND BranchCode = ?
             """, (sku, branch_code))
             
@@ -545,7 +573,9 @@ class PriceUploadService:
                 change_altname_flag
             ))
             
-            self.db_connection.commit()
+            # ⭐ Commit เฉพาะเมื่อ auto_commit = True
+            if auto_commit:
+                self.db_connection.commit()
         
         finally:
             cursor.close()

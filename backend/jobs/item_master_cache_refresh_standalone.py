@@ -481,7 +481,7 @@ def parse_item_record(item_data: Dict) -> Optional[ItemMasterRecord]:
 
 def upsert_item_batch(items: List[ItemMasterRecord], conn: pyodbc.Connection) -> tuple:
     """
-    Upsert items into Item_Master table (insert or update) using batch operations
+    Upsert items into Item_Master table (insert or update) using batch operations with executemany
 
     Args:
         items: List of ItemMasterRecord to upsert
@@ -496,7 +496,6 @@ def upsert_item_batch(items: List[ItemMasterRecord], conn: pyodbc.Connection) ->
     cursor = conn.cursor()
     inserted = 0
     updated = 0
-    batch_size = 1000
 
     try:
         # Get all existing SKUs in one query
@@ -515,61 +514,88 @@ def upsert_item_batch(items: List[ItemMasterRecord], conn: pyodbc.Connection) ->
             else:
                 insert_items.append(item)
 
-        # Batch insert new items
+        # Batch insert new items using executemany
         if insert_items:
             logger.info(f"   Inserting {len(insert_items)} new items...")
-            for batch_idx in range(0, len(insert_items), batch_size):
-                batch = insert_items[batch_idx:batch_idx + batch_size]
-                for item in batch:
-                    cursor.execute("""
-                        INSERT INTO Item_Master (
-                            SKU, No_2, Description, Base_Unit_of_Measure,
-                            Product_Group, Product_Sub_Group, Variant_Mandatory,
-                            Product_Weight, blocked, Inventory_Posting_Group,
-                            Sales_Blocked, Purchasing_Blocked
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        item.SKU,
-                        item.No_2,
-                        item.Description,
-                        item.Base_Unit_of_Measure,
-                        item.Product_Group,
-                        item.Product_Sub_Group,
-                        item.Variant_Mandatory,
-                        item.Product_Weight,
-                        item.Blocked,
-                        item.Inventory_Posting_Group,
-                        item.Sales_Blocked,
-                        item.Purchasing_Blocked
-                    ))
-
+            
+            insert_sql = """
+                INSERT INTO Item_Master (
+                    SKU, No_2, Description, Base_Unit_of_Measure,
+                    Product_Group, Product_Sub_Group, Variant_Mandatory,
+                    Product_Weight, blocked, Inventory_Posting_Group,
+                    Sales_Blocked, Purchasing_Blocked
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            
+            insert_params = [
+                (
+                    item.SKU,
+                    item.No_2,
+                    item.Description,
+                    item.Base_Unit_of_Measure,
+                    item.Product_Group,
+                    item.Product_Sub_Group,
+                    item.Variant_Mandatory,
+                    item.Product_Weight,
+                    item.Blocked,
+                    item.Inventory_Posting_Group,
+                    item.Sales_Blocked,
+                    item.Purchasing_Blocked
+                )
+                for item in insert_items
+            ]
+            
+            try:
+                cursor.fast_executemany = True
+                cursor.executemany(insert_sql, insert_params)
                 conn.commit()
-                inserted += len(batch)
-                progress = batch_idx + len(batch)
-                logger.info(f"   Progress: {progress}/{len(insert_items)} items inserted")
+                inserted = len(insert_items)
+                logger.info(f"   ✅ Inserted {inserted} items using executemany")
+            except Exception as e:
+                logger.error(f"   ❌ Batch insert failed: {e}")
+                logger.info("   🔄 Falling back to row-by-row insert...")
+                conn.rollback()
+                cursor.fast_executemany = False
+                
+                for param in insert_params:
+                    try:
+                        cursor.execute(insert_sql, param)
+                        inserted += 1
+                    except Exception as row_e:
+                        logger.error(f"   ❌ Failed to insert SKU {param[0]}: {row_e}")
+                
+                conn.commit()
 
-        # Batch update existing items
+        # Batch update existing items using executemany
         if update_items:
             logger.info(f"   Updating {len(update_items)} existing items...")
+            
+            update_sql = """
+                UPDATE Item_Master
+                SET
+                    No_2 = ?,
+                    Description = ?,
+                    Base_Unit_of_Measure = ?,
+                    Product_Group = ?,
+                    Product_Sub_Group = ?,
+                    Variant_Mandatory = ?,
+                    Product_Weight = ?,
+                    blocked = ?,
+                    Inventory_Posting_Group = ?,
+                    Sales_Blocked = ?,
+                    Purchasing_Blocked = ?
+                WHERE SKU = ?
+            """
+            
+            # แบ่งเป็น batch เล็กๆ เพื่อแสดง progress
+            batch_size = 2000
+            total_updated = 0
+            
             for batch_idx in range(0, len(update_items), batch_size):
                 batch = update_items[batch_idx:batch_idx + batch_size]
-                for item in batch:
-                    cursor.execute("""
-                        UPDATE Item_Master
-                        SET
-                            No_2 = ?,
-                            Description = ?,
-                            Base_Unit_of_Measure = ?,
-                            Product_Group = ?,
-                            Product_Sub_Group = ?,
-                            Variant_Mandatory = ?,
-                            Product_Weight = ?,
-                            blocked = ?,
-                            Inventory_Posting_Group = ?,
-                            Sales_Blocked = ?,
-                            Purchasing_Blocked = ?
-                        WHERE SKU = ?
-                    """, (
+                
+                update_params = [
+                    (
                         item.No_2,
                         item.Description,
                         item.Base_Unit_of_Measure,
@@ -582,12 +608,33 @@ def upsert_item_batch(items: List[ItemMasterRecord], conn: pyodbc.Connection) ->
                         item.Sales_Blocked,
                         item.Purchasing_Blocked,
                         item.SKU
-                    ))
-
-                conn.commit()
-                updated += len(batch)
-                progress = batch_idx + len(batch)
-                logger.info(f"   Progress: {progress}/{len(update_items)} items updated")
+                    )
+                    for item in batch
+                ]
+                
+                try:
+                    cursor.fast_executemany = True
+                    cursor.executemany(update_sql, update_params)
+                    conn.commit()
+                    total_updated += len(batch)
+                    logger.info(f"   ✅ Progress: {total_updated}/{len(update_items)} items updated")
+                except Exception as e:
+                    logger.error(f"   ❌ Batch update failed: {e}")
+                    logger.info("   🔄 Falling back to row-by-row update for this batch...")
+                    conn.rollback()
+                    cursor.fast_executemany = False
+                    
+                    for param in update_params:
+                        try:
+                            cursor.execute(update_sql, param)
+                            total_updated += 1
+                        except Exception as row_e:
+                            logger.error(f"   ❌ Failed to update SKU {param[11]}: {row_e}")
+                    
+                    conn.commit()
+                    logger.info(f"   Progress: {total_updated}/{len(update_items)} items updated")
+            
+            updated = total_updated
 
         logger.info(f"✓ Upserted items: {inserted} inserted, {updated} updated")
 
@@ -597,6 +644,8 @@ def upsert_item_batch(items: List[ItemMasterRecord], conn: pyodbc.Connection) ->
         raise
     finally:
         cursor.close()
+
+    return inserted, updated
 
     return inserted, updated
 

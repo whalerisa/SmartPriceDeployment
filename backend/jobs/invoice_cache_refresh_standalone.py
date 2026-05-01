@@ -51,6 +51,7 @@ import pyodbc
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, date
+from dateutil.relativedelta import relativedelta  # ✅ เพิ่ม relativedelta
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 from logging.handlers import TimedRotatingFileHandler
@@ -121,9 +122,9 @@ DEFAULT_INVOICE_API_URL = "http://192.192.0.37:8280/invoice-sp681/1.0.0"
 DEFAULT_INVOICE_API_KEY = "eyJ4NXQjUzI1NiI6Ik16QXpNVEZqT0RRMU1ETmpPVFUxWkRBNE5HUTVNRGt6WXpFM01XSTRNbVJsWkdVM1l6WmpZams0WkdSa00yUmhNbUl3TWpBeFl6SmxNR0pqTmpkbU53PT0iLCJraWQiOiJnYXRld2F5X2NlcnRpZmljYXRlX2FsaWFzIiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ==.eyJzdWIiOiJkZXZVc2VyQGNhcmJvbi5zdXBlciIsImFwcGxpY2F0aW9uIjp7ImlkIjo2OSwidXVpZCI6ImNlODcxN2I0LTUwOTQtNDBlMy1hNzdjLWY2M2UyNWQwNWNjNSJ9LCJpc3MiOiJodHRwczpcL1wvbG9jYWxob3N0Ojk0NDNcL29hdXRoMlwvdG9rZW4iLCJrZXl0eXBlIjoiUFJPRFVDVElPTiIsInRva2VuX3R5cGUiOiJhcGlLZXkiLCJpYXQiOjE3NjkxNzcyMDIsImp0aSI6IjYyZjhlNWEzLWUxYjktNDYwMS1iMDk0LWIwYjNhM2I2YTU1YyJ9.gNjVXzh-q9ITNMybUmrdL8Vuvptxvm3zLUKX5DXqK98qzhfSmP2dwWGteviBQLGOOlmYws0zoqf0DLzlswcT08gYhQIzXNPHTMek47w127DWHdp97lcBFNEGDBlRVxuzRq_Y9_gkwugNI7vDhu41SE7nj0tEy15-iDmGH8RNrUZEp_tML8nCjTpBs0jPcar7dIbJxyP94O63pjdSN2GXW6TTMOCRlKUsMO5EiAjJKCzHFgvFabmFZNrk12jvmLXyh7QnqXCQF1o3UNmKS7--GS3qie2mpHWyaQxP1Qa6kNWdPbHlzIp27eA208Az6XAlq2s6iaXLdcvAfZKPWcbRGQ=="
 
 # Job Configuration
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "100"))
-API_PAGE_SIZE = int(os.getenv("API_PAGE_SIZE", "500"))
-API_TIMEOUT = int(os.getenv("API_TIMEOUT", "60"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
+API_PAGE_SIZE = int(os.getenv("API_PAGE_SIZE", "5000"))
+API_TIMEOUT = int(os.getenv("API_TIMEOUT", "120"))
 
 
 def get_mssql_conn():
@@ -321,13 +322,14 @@ def parse_invoice_record(invoice_data: Dict, calculation_date: date) -> Optional
 # =========================
 
 def upsert_invoice_batch(invoices: List[InvoiceCacheRecord], conn: pyodbc.Connection) -> int:
-    """บันทึก invoice batch ลง database"""
+    """บันทึก invoice batch ลง database แบบ executemany (เร็วกว่า row-by-row)"""
     if not invoices:
         return 0
     
     cursor = conn.cursor()
-    success_count = 0
+    current_time = datetime.now()
     
+    # ใช้ MERGE statement เดียวกัน แต่ใช้ executemany แทน
     merge_sql = """
     MERGE INTO Invoice AS target
     USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)) 
@@ -363,32 +365,54 @@ def upsert_invoice_batch(invoices: List[InvoiceCacheRecord], conn: pyodbc.Connec
                 source.Line_Amount_Include_VAT, source.Project_No, source.updated_at, source.updated_at);
     """
     
-    for invoice in invoices:
-        try:
-            cursor.execute(merge_sql, (
-                invoice.document_no,
-                invoice.order_no or None,
-                invoice.customer_code,
-                invoice.sell_to_customer_name or None,
-                invoice.posting_date,
-                invoice.sku,
-                invoice.description or None,
-                invoice.variant_code or None,
-                invoice.quantity,
-                invoice.unit_of_measure or None,
-                invoice.unit_price,
-                invoice.line_amount,
-                invoice.line_amount_include_vat,
-                invoice.project_no or None,
-                datetime.now()
-            ))
-            success_count += 1
-        except Exception as e:
-            logger.error(f"  ❌ Failed to upsert invoice {invoice.document_no}: {e}")
+    # เตรียมข้อมูลเป็น list of tuples
+    params = [
+        (
+            invoice.document_no,
+            invoice.order_no or None,
+            invoice.customer_code,
+            invoice.sell_to_customer_name or None,
+            invoice.posting_date,
+            invoice.sku,
+            invoice.description or None,
+            invoice.variant_code or None,
+            invoice.quantity,
+            invoice.unit_of_measure or None,
+            invoice.unit_price,
+            invoice.line_amount,
+            invoice.line_amount_include_vat,
+            invoice.project_no or None,
+            current_time
+        )
+        for invoice in invoices
+    ]
     
-    conn.commit()
+    try:
+        # ใช้ executemany แทน execute (เร็วกว่ามาก!)
+        cursor.fast_executemany = True  # เปิด fast mode
+        cursor.executemany(merge_sql, params)
+        conn.commit()
+        success_count = len(invoices)
+        logger.info(f"  ✅ Batch inserted/updated {success_count} invoices")
+    except Exception as e:
+        logger.error(f"  ❌ Batch operation failed: {e}")
+        logger.info("  🔄 Falling back to row-by-row insert...")
+        
+        # Fallback: ถ้า executemany fail ให้ทำทีละแถว
+        conn.rollback()
+        cursor.fast_executemany = False
+        
+        success_count = 0
+        for param in params:
+            try:
+                cursor.execute(merge_sql, param)
+                success_count += 1
+            except Exception as row_e:
+                logger.error(f"  ❌ Failed to upsert invoice {param[0]}: {row_e}")
+        
+        conn.commit()
+    
     cursor.close()
-    
     return success_count
 
 

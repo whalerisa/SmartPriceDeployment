@@ -646,7 +646,7 @@ def get_accessories_items(
             SUBSTRING(im.SKU, 11, 1) AS [character],
             0 AS inventory
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE {where_sql}
         ORDER BY im.SKU
     """
@@ -1264,7 +1264,7 @@ def get_glass_list(
             ip.W1,
             ip.W2
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE {where_sql}
         ORDER BY im.SKU
         OFFSET ? ROWS
@@ -1383,7 +1383,7 @@ def calc_glass(req: GlassCalcRequest, branch_code: str = Depends(get_branch_code
     # ⚡ ดึงราคา R2 จาก Item_Price ตาม branch_code
     cur.execute("""
         SELECT R2 
-        FROM Item_Price 
+        FROM Item_Price WITH (NOLOCK)
         WHERE SKU = ? AND BranchCode = ?
     """, (req.sku, branch_code))
     row = cur.fetchone()
@@ -1425,7 +1425,7 @@ def get_glass_filter_options(
     subGroup: Optional[str] = None,
     color: Optional[str] = None,
     thickness: Optional[str] = None,
-    branch_code: str = Depends(get_branch_code)
+    branch_code: Optional[str] = None  # ทำให้เป็น optional สำหรับ Promotion
 ):
     """⚡ ดึง filter options ที่ถูกกรองแล้วตามเงื่อนไขปัจจุบัน
     
@@ -1442,18 +1442,27 @@ def get_glass_filter_options(
     color_list = color.split(',') if color else []
     thickness_list = thickness.split(',') if thickness else []
     
-    # Query จาก database พร้อมกรองตาม branch_code
+    # Query จาก database
     conn = get_mssql_conn()
     cur = conn.cursor()
     
-    # ดึงเฉพาะกระจกที่มีราคาในสาขานี้
-    cur.execute("""
-        SELECT DISTINCT
-            im.SKU
-        FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
-        WHERE im.SKU LIKE 'G%'
-    """, (branch_code,))
+    # ดึงกระจกทั้งหมด (ถ้าไม่ระบุ branch_code)
+    if branch_code:
+        # ดึงเฉพาะกระจกที่มีราคาในสาขานี้
+        cur.execute("""
+            SELECT DISTINCT
+                im.SKU
+            FROM Item_Master im
+            LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
+            WHERE im.SKU LIKE 'G%'
+        """, (branch_code,))
+    else:
+        # ดึงกระจกทั้งหมด (สำหรับ Promotion)
+        cur.execute("""
+            SELECT DISTINCT SKU
+            FROM Item_Master
+            WHERE SKU LIKE 'G%'
+        """)
     
     skus = [row[0] for row in cur.fetchall()]
     

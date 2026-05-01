@@ -27,17 +27,10 @@ router = APIRouter(tags=["Config"])
 
 # ==================== Models ====================
 
-class RoleApprovalScope(BaseModel):
-    """Role Approval Scope Configuration"""
-    min_level: str  # R2, R1, W2, W1, SDM
-    max_level: str  # R2, R1, W2, W1, SDM
-
-
 class PriceConfig(BaseModel):
     """Price Configuration"""
     sdm_threshold_price: float
     price_levels: Dict[str, float] = {}
-    role_approval_scope: Dict[str, RoleApprovalScope] = {}
 
 
 class PageAccessConfig(BaseModel):
@@ -204,14 +197,6 @@ async def get_config(employee: dict = Depends(get_current_employee)):
         api_configs = {}
         
         # Price Configuration
-        # Load role_approval_scope from cache first, then environment
-        from config_cache import get_role_approval_scope
-        role_approval_scope_dict = get_role_approval_scope()
-        role_approval_scope = {
-            role: RoleApprovalScope(**scope) 
-            for role, scope in role_approval_scope_dict.items()
-        }
-        
         price_config = PriceConfig(
             sdm_threshold_price=SDM_THRESHOLD_PRICE,
             price_levels={
@@ -220,8 +205,7 @@ async def get_config(employee: dict = Depends(get_current_employee)):
                 "R1": 0,
                 "W2": 0,
                 "W1": 0
-            },
-            role_approval_scope=role_approval_scope
+            }
         )
         
         # Access Control Configuration
@@ -289,7 +273,6 @@ async def update_config(
     
     Supported updates:
     - price_config.sdm_threshold_price
-    - price_config.role_approval_scope
     - access_control.price_update_employees
     - access_control.project_price_employees
     - access_control.special_price_approvers
@@ -308,7 +291,7 @@ async def update_config(
     
     try:
         import json
-        from config_cache import set_page_access_config, set_role_approval_scope
+        from config_cache import set_page_access_config
         
         # Track which env vars need to be persisted to .env file
         env_updates = {}
@@ -321,13 +304,6 @@ async def update_config(
             if "sdm_threshold_price" in price_cfg:
                 os.environ["SDM_THRESHOLD_PRICE"] = str(price_cfg["sdm_threshold_price"])
                 env_updates["SDM_THRESHOLD_PRICE"] = str(price_cfg["sdm_threshold_price"])
-            
-            # Store role_approval_scope in cache (immediate effect)
-            if "role_approval_scope" in price_cfg:
-                set_role_approval_scope(price_cfg["role_approval_scope"])
-                # Also store in environment for persistence
-                os.environ["ROLE_APPROVAL_SCOPE"] = json.dumps(price_cfg["role_approval_scope"])
-                env_updates["ROLE_APPROVAL_SCOPE"] = json.dumps(price_cfg["role_approval_scope"])
         
         if "access_control" in config_data:
             ac = config_data["access_control"]

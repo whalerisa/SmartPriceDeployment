@@ -215,7 +215,7 @@ def get_items_list_light(
     count_sql = f"""
         SELECT COUNT(*) AS total
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE {where_sql} AND im.Blocked = 0
     """
     cursor.execute(count_sql, branch_code, *params)
@@ -232,7 +232,7 @@ def get_items_list_light(
             im.Product_Sub_Group,
             ip.AlternateName
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE {where_sql} AND im.Blocked = 0
         ORDER BY im.SKU
         OFFSET ? ROWS
@@ -328,7 +328,7 @@ def get_items_paginated(
     count_sql = f"""
         SELECT COUNT(*) AS total
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE {where_sql} AND im.Blocked = 0
     """
     cursor.execute(count_sql, branch_code, *params)
@@ -346,7 +346,7 @@ def get_items_paginated(
             ip.AlternateName,
             LEFT(im.SKU, 1) AS category
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE {where_sql} AND im.Blocked = 0
         ORDER BY im.SKU
         OFFSET ? ROWS
@@ -411,7 +411,7 @@ def full_text_search_items(
                     im.Product_Group, im.Product_Sub_Group, ip.AlternateName,
                     im.Product_Weight
                 FROM Item_Master im
-                LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+                LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
                 WHERE (CONTAINS((im.SKU, im.No_2, im.Description), ?)
                    OR CONTAINS((ip.AlternateName), ?))
                    AND im.Blocked = 0
@@ -436,7 +436,7 @@ def full_text_search_items(
                     im.Product_Group, im.Product_Sub_Group, ip.AlternateName,
                     im.Product_Weight
                 FROM Item_Master im
-                LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+                LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
                 WHERE (FREETEXT((im.Description), ?)
                    OR FREETEXT((ip.AlternateName), ?)
                    OR CONTAINS((im.SKU, im.No_2), ?))
@@ -456,7 +456,7 @@ def full_text_search_items(
                 im.Product_Group, im.Product_Sub_Group, ip.AlternateName,
                 im.Product_Weight
             FROM Item_Master im
-            LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+            LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
             WHERE (im.SKU LIKE ?
                 OR im.No_2 LIKE ?
                 OR im.Description LIKE ?
@@ -514,7 +514,7 @@ def get_item_detail(sku: str, branch_code: str = Depends(get_branch_code)):
             im.Product_Group, im.Product_Sub_Group, ip.AlternateName,
             im.Product_Weight
         FROM Item_Master im
-        LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+        LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
         WHERE im.SKU = ? AND im.Blocked = 0
     """
 
@@ -531,7 +531,7 @@ def get_item_detail(sku: str, branch_code: str = Depends(get_branch_code)):
                 im.Product_Group, im.Product_Sub_Group, ip.AlternateName,
                 im.Product_Weight
             FROM Item_Master im
-            LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+            LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
             WHERE im.No_2 = ? AND im.Blocked = 0
         """
         cursor.execute(sql, branch_code, sku)

@@ -47,54 +47,29 @@ class RejectionRequest(BaseModel):
 
 # === HELPER FUNCTIONS ===
 
-async def get_config_settings() -> Dict[str, Any]:
-    """Get config settings from cache or environment"""
-    try:
-        from config_cache import get_role_approval_scope
-        
-        # Load role_approval_scope from cache (which reads from .env or JSON file)
-        role_approval_scope = get_role_approval_scope()
-        
-        logger.info(f"✅ Loaded role_approval_scope from cache: {role_approval_scope}")
-        
-        return {
-            "price_config": {
-                "role_approval_scope": role_approval_scope
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error getting config: {e}")
-        return get_default_config()
-
-
 def get_default_config() -> Dict[str, Any]:
-    """Get default config (fallback) - loads from config_cache"""
-    try:
-        from config_cache import get_role_approval_scope
-        
-        role_approval_scope = get_role_approval_scope()
-        logger.info(f"✅ Default config loaded from cache: {role_approval_scope}")
-        
-        return {
-            "price_config": {
-                "role_approval_scope": role_approval_scope
+    """
+    Get default config with hardcoded role approval scope.
+    
+    Logic การอนุมัติ (ตายตัว):
+    - ราคา >= R1: ไม่ต้องขออนุมัติ
+    - R1 > ราคา >= W2: ZM_ONLY (อนุมัติจาก ZM เท่านั้น)
+    - W2 > ราคา >= W1: ZM_THEN_RM (ต้องผ่าน ZM → RM)
+    - W1 > ราคา >= SDM: SDM_APPROVAL (ต้องผ่าน ZM → RM → SDM)
+    - ราคา < SDM: PM_APPROVAL (ต้องผ่าน ZM → RM → SDM → PM)
+    """
+    return {
+        "price_config": {
+            "role_approval_scope": {
+                "Sales": {"min_level": "R2", "max_level": "R2"},
+                "ZM": {"min_level": "R1", "max_level": "W2"},
+                "RM": {"min_level": "W2", "max_level": "W1"},
+                "SDM": {"min_level": "W1", "max_level": "SDM"},
+                "PM": {"min_level": "R2", "max_level": "SDM"},
+                "CEO": {"min_level": "R2", "max_level": "SDM"}
             }
         }
-    except Exception as e:
-        logger.error(f"Error loading default config from cache: {e}")
-        # Hardcoded fallback (should rarely be used)
-        return {
-            "price_config": {
-                "role_approval_scope": {
-                    "Sales": {"min_level": "R2", "max_level": "R2"},
-                    "ZM": {"min_level": "R1", "max_level": "W2"},
-                    "RM": {"min_level": "W2", "max_level": "W1"},
-                    "SDM": {"min_level": "W1", "max_level": "SDM"},
-                    "PM": {"min_level": "R2", "max_level": "SDM"},
-                    "CEO": {"min_level": "R2", "max_level": "SDM"}
-                }
-            }
-        }
+    }
 
 
 def price_level_order() -> Dict[str, int]:
@@ -733,8 +708,8 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
         logger.info(f"  Role: {current_role}")
         logger.info(f"  Branch: {current_branch}")
         
-        # ⭐ Load config
-        config = await get_config_settings()
+        # ⭐ Load config (hardcoded values)
+        config = get_default_config()
         logger.info(f"  Config loaded: {config}")
         
         conn = get_mssql_conn()

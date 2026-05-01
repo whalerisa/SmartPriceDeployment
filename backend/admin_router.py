@@ -173,6 +173,193 @@ async def upload_prices(
             logger.warning(f"Failed to remove temporary file: {str(e)}")
 
 
+@router.post("/prices/schedule", response_model=UploadResponse) #Schedule Price Upload
+async def schedule_price_upload(
+    file: UploadFile = File(...),
+    branch_code: str = QueryParam(..., description="Branch code(s) for price data (comma-separated)"),
+    scheduled_date: str = QueryParam(..., description="Scheduled date in YYYY-MM-DD format"),
+    employee_info: dict = Depends(get_employee_info)
+):
+    """
+    Schedule price file upload for a future date.
+    
+    Process:
+    1. Validate file format and scheduled date
+    2. Detect category from file content (G, A, Y, S, C, E)
+    3. Save file with naming convention: {Category}{DDMMYYYY}.xlsx
+    4. Store file in configured SCHEDULED_UPLOAD_FOLDER
+    5. Standalone job will process files on scheduled date
+    
+    Args:
+        file: Uploaded file (CSV or Excel)
+        branch_code: Branch code(s) for price data (comma-separated)
+        scheduled_date: Date to upload (YYYY-MM-DD format)
+    
+    Returns:
+        UploadResponse with success message
+    
+    Raises:
+        HTTPException 400: When validation fails
+        HTTPException 500: When file save fails
+    """
+    import pandas as pd
+    from datetime import datetime
+    
+    logger.info(f"Received scheduled price upload request")
+    logger.info(f"Scheduled date: {scheduled_date}, Branches: {branch_code}")
+    logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')})")
+    
+    # Validate file extension
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in [".csv", ".xlsx", ".xls"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format: {file_ext}. Supported: .csv, .xlsx, .xls"
+        )
+    
+    # Validate scheduled date
+    try:
+        scheduled_dt = datetime.strptime(scheduled_date, "%Y-%m-%d")
+        if scheduled_dt.date() < datetime.now().date():
+            raise HTTPException(status_code=400, detail="Scheduled date cannot be in the past")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    # Parse branch codes
+    branch_codes = [b.strip() for b in branch_code.split(",") if b.strip()]
+    if not branch_codes:
+        raise HTTPException(status_code=400, detail="No valid branch codes provided")
+    
+    # Save to temporary file first to read content
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            temp_path = temp_file.name
+            content = await file.read()
+            temp_file.write(content)
+        
+        logger.info(f"Saved uploaded file to temporary location: {temp_path}")
+    except Exception as e:
+        logger.error(f"Failed to save uploaded file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    # Detect category from file content
+    try:
+        # Read Excel file
+        if file_ext == ".csv":
+            df = pd.read_csv(temp_path)
+        else:
+            df = pd.read_excel(temp_path)
+        
+        # Find SKU column
+        sku_column = None
+        for col_name in ["SKU", "No_", "Item_No", "No", "ItemNo"]:
+            if col_name in df.columns:
+                sku_column = col_name
+                break
+        
+        if not sku_column:
+            os.remove(temp_path)
+            raise HTTPException(status_code=400, detail="SKU column not found in file")
+        
+        # Detect category from first SKU
+        categories = set()
+        for idx, row in df.iterrows():
+            sku = str(row.get(sku_column, "")).strip()
+            if sku and len(sku) > 0:
+                category = sku[0].upper()
+                if category in ['G', 'A', 'Y', 'S', 'C', 'E']:
+                    categories.add(category)
+        
+        if not categories:
+            os.remove(temp_path)
+            raise HTTPException(status_code=400, detail="No valid SKU categories found (G, A, Y, S, C, E)")
+        
+        # Use first category or MIXED if multiple
+        if len(categories) == 1:
+            category = list(categories)[0]
+        else:
+            category = "MIXED"
+        
+        logger.info(f"Detected category: {category}")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        os.remove(temp_path)
+        logger.error(f"Failed to detect category: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
+    
+    # Generate filename: {Category}{DDMMYYYY}.xlsx
+    # Format date as DDMMYYYY (Buddhist year)
+    day = scheduled_dt.strftime("%d")
+    month = scheduled_dt.strftime("%m")
+    year_buddhist = str(scheduled_dt.year + 543)  # Convert to Buddhist year
+    filename = f"{category}{day}{month}{year_buddhist}.xlsx"
+    
+    # Get scheduled upload folder from environment
+    scheduled_folder = os.getenv("SCHEDULED_UPLOAD_FOLDER", "data/scheduled_uploads")
+    
+    # Create folder if not exists
+    try:
+        os.makedirs(scheduled_folder, exist_ok=True)
+    except Exception as e:
+        os.remove(temp_path)
+        logger.error(f"Failed to create scheduled upload folder: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create folder: {str(e)}")
+    
+    # Move file to scheduled folder
+    final_path = os.path.join(scheduled_folder, filename)
+    try:
+        # If file already exists, add timestamp to make it unique
+        if os.path.exists(final_path):
+            timestamp = datetime.now().strftime("%H%M%S")
+            filename_base, filename_ext = os.path.splitext(filename)
+            filename = f"{filename_base}_{timestamp}{filename_ext}"
+            final_path = os.path.join(scheduled_folder, filename)
+        
+        # Move file
+        os.rename(temp_path, final_path)
+        logger.info(f"Saved scheduled upload file: {final_path}")
+        
+        # Save metadata to a companion JSON file
+        import json
+        metadata = {
+            "filename": filename,
+            "scheduled_date": scheduled_date,
+            "branch_codes": branch_codes,
+            "category": category,
+            "uploaded_by": employee_info.get('employee_id'),
+            "uploaded_by_name": employee_info.get('name'),
+            "uploaded_at": datetime.now().isoformat(),
+            "status": "pending"
+        }
+        
+        metadata_path = final_path + ".meta.json"
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"Saved metadata: {metadata_path}")
+        
+    except Exception as e:
+        # Clean up temp file if move fails
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        logger.error(f"Failed to save scheduled upload file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    
+    return UploadResponse(
+        success=True,
+        message=f"Scheduled upload saved successfully. File will be processed on {scheduled_date}",
+        total_rows=0,
+        successful_updates=0,
+        errors=0,
+        error_details=[]
+    )
+
+
 
 # =====================================================
 # EMPLOYEE ACCESS CONTROL ENDPOINTS

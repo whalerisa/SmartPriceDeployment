@@ -197,7 +197,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 ip.AlternateName,
                 0 AS RE
             FROM Item_Master im
-            LEFT JOIN Item_Price ip ON im.SKU = ip.SKU AND ip.BranchCode = ?
+            LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
             WHERE im.SKU IN ({placeholders})
         """
 

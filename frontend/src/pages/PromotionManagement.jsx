@@ -199,56 +199,123 @@ const PromotionManagement = ({ standalone = false }) => {
             
             console.log(`✅ [LOAD FILTER] Response for ${categoryCode}:`, data);
 
-            // แปลงข้อมูลจาก API format {code, name} เป็น {value, label}
+            // แปลงข้อมูลจาก API format {code, name} หรือ {value, label} เป็น {value, label}
             if (data.brand || data.brands) {
               const brandData = data.brand || data.brands;
-              brandData.forEach(b => {
-                allOptions.brands.add(JSON.stringify({
-                  value: b.code,
-                  label: b.name
-                }));
-              });
+              // ถ้าเป็น array ของ {value, label} ให้ใช้เลย
+              if (Array.isArray(brandData) && brandData.length > 0 && brandData[0].value) {
+                brandData.forEach(b => {
+                  if (b.value && b.label) {
+                    allOptions.brands.add(JSON.stringify({
+                      value: b.value,
+                      label: b.label
+                    }));
+                  }
+                });
+              } else {
+                // ถ้าเป็น array ของ {code, name}
+                brandData.forEach(b => {
+                  if (b.code && b.name) {
+                    allOptions.brands.add(JSON.stringify({
+                      value: b.code,
+                      label: b.name
+                    }));
+                  }
+                });
+              }
             }
             
             // Glass ใช้ "types" แทน "group"
             if (data.group || data.types) {
               const groupData = data.group || data.types;
-              groupData.forEach(g => {
-                allOptions.groups.add(JSON.stringify({
-                  value: g.code,
-                  label: g.name
-                }));
-              });
+              if (Array.isArray(groupData) && groupData.length > 0 && groupData[0].value) {
+                groupData.forEach(g => {
+                  if (g.value && g.label) {
+                    allOptions.groups.add(JSON.stringify({
+                      value: g.value,
+                      label: g.label
+                    }));
+                  }
+                });
+              } else {
+                groupData.forEach(g => {
+                  if (g.code && g.name) {
+                    allOptions.groups.add(JSON.stringify({
+                      value: g.code,
+                      label: g.name
+                    }));
+                  }
+                });
+              }
             }
             
             if (data.subGroup || data.subGroups) {
               const subGroupData = data.subGroup || data.subGroups;
-              subGroupData.forEach(s => {
-                allOptions.subGroups.add(JSON.stringify({
-                  value: s.code,
-                  label: s.name
-                }));
-              });
+              if (Array.isArray(subGroupData) && subGroupData.length > 0 && subGroupData[0].value) {
+                subGroupData.forEach(s => {
+                  if (s.value && s.label) {
+                    allOptions.subGroups.add(JSON.stringify({
+                      value: s.value,
+                      label: s.label
+                    }));
+                  }
+                });
+              } else {
+                subGroupData.forEach(s => {
+                  if (s.code && s.name) {
+                    allOptions.subGroups.add(JSON.stringify({
+                      value: s.code,
+                      label: s.name
+                    }));
+                  }
+                });
+              }
             }
             
             if (data.color || data.colors) {
               const colorData = data.color || data.colors;
-              colorData.forEach(c => {
-                allOptions.colors.add(JSON.stringify({
-                  value: c.code,
-                  label: c.name
-                }));
-              });
+              if (Array.isArray(colorData) && colorData.length > 0 && colorData[0].value) {
+                colorData.forEach(c => {
+                  if (c.value && c.label) {
+                    allOptions.colors.add(JSON.stringify({
+                      value: c.value,
+                      label: c.label
+                    }));
+                  }
+                });
+              } else {
+                colorData.forEach(c => {
+                  if (c.code && c.name) {
+                    allOptions.colors.add(JSON.stringify({
+                      value: c.code,
+                      label: c.name
+                    }));
+                  }
+                });
+              }
             }
             
             if (data.thickness || data.thicknesses) {
               const thicknessData = data.thickness || data.thicknesses;
-              thicknessData.forEach(t => {
-                allOptions.thicknesses.add(JSON.stringify({
-                  value: t.code,
-                  label: t.name
-                }));
-              });
+              if (Array.isArray(thicknessData) && thicknessData.length > 0 && thicknessData[0].value) {
+                thicknessData.forEach(t => {
+                  if (t.value && t.label) {
+                    allOptions.thicknesses.add(JSON.stringify({
+                      value: t.value,
+                      label: t.label
+                    }));
+                  }
+                });
+              } else {
+                thicknessData.forEach(t => {
+                  if (t.code && t.name) {
+                    allOptions.thicknesses.add(JSON.stringify({
+                      value: t.code,
+                      label: t.name
+                    }));
+                  }
+                });
+              }
             }
           } catch (err) {
             console.error(`❌ [LOAD FILTER] Error loading filter options for category ${categoryCode}:`, err);
@@ -267,11 +334,26 @@ const PromotionManagement = ({ standalone = false }) => {
       // แปลง Set กลับเป็น array และ parse JSON
       const finalOptions = {
         categories: CATEGORY_OPTIONS,
-        brands: Array.from(allOptions.brands).map(b => JSON.parse(b)).sort((a, b) => a.label.localeCompare(b.label)),
-        groups: Array.from(allOptions.groups).map(g => JSON.parse(g)).sort((a, b) => a.label.localeCompare(b.label)),
-        subGroups: Array.from(allOptions.subGroups).map(s => JSON.parse(s)).sort((a, b) => a.label.localeCompare(b.label)),
-        colors: Array.from(allOptions.colors).map(c => JSON.parse(c)).sort((a, b) => a.label.localeCompare(b.label)),
-        thicknesses: Array.from(allOptions.thicknesses).map(t => JSON.parse(t)).sort((a, b) => a.label.localeCompare(b.label))
+        brands: Array.from(allOptions.brands)
+          .map(b => JSON.parse(b))
+          .filter(item => item.label && item.value) // กรองเฉพาะที่มี label และ value
+          .sort((a, b) => (a.label || '').localeCompare(b.label || '')),
+        groups: Array.from(allOptions.groups)
+          .map(g => JSON.parse(g))
+          .filter(item => item.label && item.value)
+          .sort((a, b) => (a.label || '').localeCompare(b.label || '')),
+        subGroups: Array.from(allOptions.subGroups)
+          .map(s => JSON.parse(s))
+          .filter(item => item.label && item.value)
+          .sort((a, b) => (a.label || '').localeCompare(b.label || '')),
+        colors: Array.from(allOptions.colors)
+          .map(c => JSON.parse(c))
+          .filter(item => item.label && item.value)
+          .sort((a, b) => (a.label || '').localeCompare(b.label || '')),
+        thicknesses: Array.from(allOptions.thicknesses)
+          .map(t => JSON.parse(t))
+          .filter(item => item.label && item.value)
+          .sort((a, b) => (a.label || '').localeCompare(b.label || ''))
       };
       
       console.log('✅ [LOAD FILTER] Final options:', finalOptions);
@@ -942,9 +1024,9 @@ const PromotionManagement = ({ standalone = false }) => {
                               </div>
                             )}
                             {!skuSearchLoading && skuSearchResults.length > 0 && (
-                              skuSearchResults.map((item, idx) => (
+                              skuSearchResults.map((item) => (
                                 <div
-                                  key={idx}
+                                  key={item.sku || item.id}
                                   onClick={() => {
                                     setNewItem({ ...newItem, sku: item.sku });
                                     setShowSkuDropdown(false);
@@ -1116,10 +1198,10 @@ const PromotionManagement = ({ standalone = false }) => {
                             label="Thickness"
                             options={filterOptions.thicknesses}
                             selectedValues={formData.filter_criteria.thicknesses}
-                            onToggle={(value) => handleFilterToggle('thickness', value)}
-                            isOpen={openDropdown.thickness}
-                            onOpen={() => setOpenDropdown(prev => ({ ...prev, thickness: true }))}
-                            onClose={() => setOpenDropdown(prev => ({ ...prev, thickness: false }))}
+                            onToggle={(value) => handleFilterToggle('thicknesses', value)}
+                            isOpen={openDropdown.thicknesses}
+                            onOpen={() => setOpenDropdown(prev => ({ ...prev, thicknesses: true }))}
+                            onClose={() => setOpenDropdown(prev => ({ ...prev, thicknesses: false }))}
                           />
                         </div>
                       )}
@@ -1136,8 +1218,8 @@ const PromotionManagement = ({ standalone = false }) => {
                             ✅ พบ {matchedSkus.length} SKU ที่ตรงกับเงื่อนไข
                           </p>
                           <div className="max-h-48 overflow-y-auto space-y-1">
-                            {matchedSkus.slice(0, 10).map((item, idx) => (
-                              <p key={idx} className="text-sm text-gray-700">
+                            {matchedSkus.slice(0, 10).map((item) => (
+                              <p key={item.sku} className="text-sm text-gray-700">
                                 • {item.sku} - {item.description}
                               </p>
                             ))}
@@ -1207,6 +1289,12 @@ function MultiSelectDropdown({
 }) {
   const ref = useRef(null);
 
+  // Debug: แสดงข้อมูลที่ได้รับ
+  useEffect(() => {
+    console.log(`[${label}] Options:`, options.length, 'items');
+    console.log(`[${label}] Selected:`, selectedValues);
+  }, [label, options, selectedValues]);
+
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (ref.current && !ref.current.contains(event.target)) {
@@ -1224,6 +1312,7 @@ function MultiSelectDropdown({
 
   const handleItemClick = (e, value) => {
     e.stopPropagation(); // ป้องกันไม่ให้ dropdown ปิด
+    console.log(`[${label}] Toggling value:`, value);
     onToggle(value);
   };
 
@@ -1254,9 +1343,9 @@ function MultiSelectDropdown({
 
       {selectedValues.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
-          {selectedLabels.slice(0, 5).map((text, index) => (
+          {selectedLabels.slice(0, 5).map((text) => (
             <span
-              key={`${text}-${index}`}
+              key={text}
               className="bg-red-50 text-red-700 text-xs px-2 py-1 rounded-full"
             >
               {text}
