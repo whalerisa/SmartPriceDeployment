@@ -352,8 +352,9 @@ def run_scheduled_price_upload() -> ScheduledUploadJobResult:
         logger.info(f"   Triggered at: {start_time}")
         logger.info("=" * 80)
         
-        # ⭐ Hardcoded path - ไม่อ่านจาก .env
-        scheduled_folder = r"C:\Users\HP\Desktop\Quetung\SmartPriceDeployment\ScheduledPriceUploads"
+        # path 
+        #scheduled_folder = r"C:\Users\HP\Desktop\Quetung\SmartPriceDeployment\ScheduledPriceUploads"
+        scheduled_folder = r"C:\Users\kongd\Desktop\SP681\UploadsPrice"
         
         logger.info(f"📁 Using hardcoded folder path: {scheduled_folder}")
         

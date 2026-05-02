@@ -8,18 +8,24 @@ echo Scheduled Price Upload Job
 echo ========================================
 echo.
 
-REM Change to the jobs directory
-cd /d "%~dp0"
+REM Get the directory where this batch file is located
+set SCRIPT_DIR=%~dp0
+
+REM Change to the backend directory (parent of jobs)
+cd /d "%SCRIPT_DIR%.."
+echo Working directory: %CD%
 
 REM Activate virtual environment if exists
-if exist "..\..\venv\Scripts\activate.bat" (
+if exist "..\venv\Scripts\activate.bat" (
     echo Activating virtual environment...
-    call ..\..\venv\Scripts\activate.bat
+    call ..\venv\Scripts\activate.bat
+) else (
+    echo ⚠️ Virtual environment not found at ..\venv\Scripts\activate.bat
 )
 
-REM Run the job
+REM Run the job from backend directory
 echo Running scheduled price upload job...
-python scheduled_price_upload_standalone.py
+python jobs\scheduled_price_upload_standalone.py
 
 REM Check exit code
 if %ERRORLEVEL% EQU 0 (
