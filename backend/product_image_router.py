@@ -48,12 +48,9 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
         )
     
     # ตรวจสอบขนาดไฟล์
-    file_size = file.size
-    if file_size is None:
-        # ถ้าไม่สามารถหาขนาดได้ ให้อ่านไฟล์เพื่อตรวจสอบ
-        file_content = await file.read()
-        file_size = len(file_content)
-        await file.seek(0)  # Reset file pointer
+    # อ่านเนื้อหาไฟล์เพื่อตรวจสอบขนาด
+    file_content = await file.read()
+    file_size = len(file_content)
     
     if file_size > MAX_FILE_SIZE:
         file_size_mb = file_size / (1024 * 1024)
@@ -64,6 +61,8 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
             detail=f"ขนาดไฟล์เกินขีดจำกัด ({file_size_mb:.2f} MB > {max_size_mb:.2f} MB)"
         )
     
+    # Reset file pointer หลังจากอ่านเนื้อหา
+    await file.seek(0)
     # สร้างชื่อไฟล์ตาม SKU
     filename = f"{sku}{file_ext}"
     file_path = IMAGES_DIR / filename
@@ -73,9 +72,9 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
     logger.info(f"   File size: {file_size / (1024 * 1024):.2f} MB")
     
     try:
-        # บันทึกไฟล์
+        # บันทึกไฟล์โดยใช้เนื้อหาที่อ่านมาแล้ว
         with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(file_content)
         
         logger.info(f"✅ Image uploaded successfully")
         logger.info(f"   File size: {file_path.stat().st_size} bytes")

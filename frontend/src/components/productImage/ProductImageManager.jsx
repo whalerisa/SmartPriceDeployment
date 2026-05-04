@@ -1,7 +1,6 @@
 // components/productImage/ProductImageManager.jsx
 import React, { useState, useEffect } from "react";
 import api from "../../services/api.js";
-import ImageCropper from "./ImageCropper.jsx";
 
 export default function ProductImageManager() {
   const [sku, setSku] = useState("");
@@ -12,10 +11,6 @@ export default function ProductImageManager() {
   const [message, setMessage] = useState({ type: "", text: "" });
   const [allImages, setAllImages] = useState([]);
   const [loadingImages, setLoadingImages] = useState(false);
-
-  // Crop state
-  const [showCropper, setShowCropper] = useState(false);
-  const [originalImageUrl, setOriginalImageUrl] = useState(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -119,41 +114,42 @@ export default function ProductImageManager() {
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // สร้าง URL สำหรับ crop
+      // ตรวจสอบขนาดไฟล์ (1MB = 1024 * 1024 bytes)
+      const maxSize = 1024 * 1024; // 1MB
+      if (file.size > maxSize) {
+        setMessage({ 
+          type: "error", 
+          text: `ขนาดไฟล์เกิน 1MB (ขนาดปัจจุบัน: ${(file.size / 1024 / 1024).toFixed(2)}MB)` 
+        });
+        // รีเซ็ต input file
+        e.target.value = '';
+        return;
+      }
+
+      // ตรวจสอบประเภทไฟล์
+      const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        setMessage({ 
+          type: "error", 
+          text: "รองรับเฉพาะไฟล์รูปภาพ (JPG, PNG, GIF, WebP)" 
+        });
+        e.target.value = '';
+        return;
+      }
+
+      // ล้างข้อความเก่า
+      setMessage({ type: "", text: "" });
+
+      // สร้าง preview
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        setOriginalImageUrl(reader.result);
-        setShowCropper(true);
+        setPreviewUrl(reader.result);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  // เมื่อ crop เสร็จ
-  const handleCropComplete = (croppedBlob) => {
-    // สร้าง File object จาก blob
-    const croppedFile = new File([croppedBlob], "cropped-image.jpg", {
-      type: "image/jpeg",
-    });
-    
-    setSelectedFile(croppedFile);
-    
-    // สร้าง preview
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setPreviewUrl(reader.result);
-    };
-    reader.readAsDataURL(croppedBlob);
-    
-    setShowCropper(false);
-    setOriginalImageUrl(null);
-  };
-
-  // ยกเลิก crop
-  const handleCropCancel = () => {
-    setShowCropper(false);
-    setOriginalImageUrl(null);
-  };
 
   // อัปโหลดรูปภาพ
   const handleUpload = async () => {
@@ -236,15 +232,6 @@ export default function ProductImageManager() {
 
   return (
     <div className="space-y-6">
-      {/* Image Cropper Modal */}
-      {showCropper && originalImageUrl && (
-        <ImageCropper
-          imageSrc={originalImageUrl}
-          onCropComplete={handleCropComplete}
-          onCancel={handleCropCancel}
-        />
-      )}
-
       {/* ส่วนอัปโหลด */}
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-2xl font-bold mb-6">จัดการรูปภาพสินค้า</h2>
@@ -326,7 +313,7 @@ export default function ProductImageManager() {
                 className="w-full px-4 py-2 border rounded-lg"
               />
               <p className="text-sm text-gray-500 mt-1">
-                รองรับ: JPG, PNG, GIF, WebP
+                รองรับ: JPG, PNG, GIF, WebP (ขนาดไม่เกิน 1MB)
               </p>
             </div>
 
