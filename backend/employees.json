@@ -127,51 +127,45 @@
       "role": "ZM"
     },
     {
-      "employee_id": "20054",
-      "branch": "90HO",
-      "region": "BE",
-      "role": "RM"
-    },
-    {
       "employee_id": "20614",
       "branch": "00TR",
-      "region": "BE",
+      "region": "BKK",
       "role": "ZM"
     },
     {
       "employee_id": "20194",
       "branch": "01TJ",
-      "region": "BE",
+      "region": "BKK",
       "role": "ZM"
     },
     {
       "employee_id": "20785",
       "branch": "03TS",
-      "region": "BE",
+      "region": "BKK",
       "role": "ZM"
     },
     {
       "employee_id": "20093",
       "branch": "04TP",
-      "region": "BE",
+      "region": "BKK",
       "role": "ZM"
     },
     {
       "employee_id": "16647",
       "branch": "06RY",
-      "region": "BE",
+      "region": "E",
       "role": "ZM"
     },
     {
       "employee_id": "16646",
       "branch": "15CB",
-      "region": "BE",
+      "region": "E",
       "role": "ZM"
     },
     {
       "employee_id": "21094",
       "branch": "24TL",
-      "region": "BE",
+      "region": "BKK",
       "role": "ZM"
     },
     {
@@ -227,6 +221,18 @@
       "branch": "90HO",
       "region": "ALL",
       "role": "Sales_Project"
+    },
+    {
+      "employee_id": "20054",
+      "branch": "00TR",
+      "region": "BKK",
+      "role": "RM"
+    },
+    {
+      "employee_id": "20054",
+      "branch": "00TR",
+      "region": "E",
+      "role": "RM"
     }
   ]
 }

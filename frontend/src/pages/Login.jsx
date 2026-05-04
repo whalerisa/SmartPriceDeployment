@@ -132,7 +132,7 @@ function Login() {
         </p>
 
         {/* Toggle Login Mode */}
-        <div className="mb-6 flex gap-2">
+       {/* <div className="mb-6 flex gap-2">
           <button
             onClick={() => setLoginMode("uxp")}
             className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
@@ -143,9 +143,11 @@ function Login() {
           >
             UXP Login
           </button>
-          {/* ปุ่ม Manual Login */}
-       
-            <button
+         
+           
+  
+        </div> */}
+         <button
               onClick={() => setLoginMode("manual")}
               className={`flex-1 py-2 px-4 rounded-lg font-medium transition-all ${
                 loginMode === "manual"
@@ -154,10 +156,8 @@ function Login() {
               }`}
             >
               Manual Login
-            </button> 
-  
-        </div>
-
+          </button> 
+        
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl">
             <p className="text-sm text-red-700 text-center">{error}</p>

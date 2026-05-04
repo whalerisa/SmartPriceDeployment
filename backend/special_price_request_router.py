@@ -8,7 +8,7 @@ from employee_position_mapper import (
     find_zm_at_branch, find_rm_in_region, find_sdm,
     find_pm_by_category, find_all_pms_by_categories
 )
-from branch_region_mapping import get_region_from_branch
+from branch_region_mapping import get_region_from_branch, get_regions_for_rm, get_regions_for_rm_by_employee_id
 from config.db_mssql import get_mssql_conn
 import logging
 import os
@@ -344,18 +344,24 @@ async def get_pending_approvals(employee_info: dict = Depends(get_employee_info)
             """, (position_id,))
             
         elif current_role == 'RM':
-            # RM ดูคำขอที่ status = PENDING_RM
-            # ต้องเช็คว่า RM คนนี้รับผิดชอบภูมิภาคไหน
-            region = employee_info.get('region')
-            position_id = f"RM_{region}"
-            logger.info(f"  Looking for requests with approver_employee_id = {position_id} and status = PENDING_RM")
+            # ⭐ RM ดูคำขอที่ status = PENDING_RM จากทุกภูมิภาคที่ดูแล
+            rm_branch = employee_info.get('branch_code')
+            rm_regions = get_regions_for_rm(rm_branch)
             
-            cursor.execute("""
+            logger.info(f"  RM branch: {rm_branch}")
+            logger.info(f"  RM responsible regions: {rm_regions}")
+            logger.info(f"  Looking for requests with status = PENDING_RM from regions: {rm_regions}")
+            
+            # ⭐ สร้าง position_ids สำหรับทุกภูมิภาคที่ RM ดูแล
+            position_ids = [f"RM_{region}" for region in rm_regions]
+            placeholders = ','.join(['?' for _ in position_ids])
+            
+            cursor.execute(f"""
                 SELECT * FROM special_price_requests
                 WHERE status = 'PENDING_RM'
-                AND approver_employee_id = ?
+                AND approver_employee_id IN ({placeholders})
                 ORDER BY created_at DESC
-            """, (position_id,))
+            """, position_ids)
             
         elif current_role == 'SDM':
             # SDM ดูคำขอที่ status = PENDING_SDM
@@ -747,21 +753,26 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
             if current_status != 'PENDING_RM':
                 raise HTTPException(status_code=403, detail="This request is not pending RM approval")
             
-            # RM ต้องเช็คว่าคำขอมาจากสาขาในภูมิภาคที่ RM ดูแล
-            # ดึง region ของคำขอจาก approver_employee_id (เช่น "RM_BE")
+            # ⭐ RM ต้องเช็คว่าคำขอมาจากสาขาในภูมิภาคที่ RM ดูแล
+            # ดึง region ของคำขอจาก approver_employee_id (เช่น "RM_BKK" หรือ "RM_E")
             if not approver_employee_id or not approver_employee_id.startswith('RM_'):
                 raise HTTPException(status_code=400, detail="Invalid approver employee ID for RM")
             
-            request_region = approver_employee_id.split('_')[1]  # "RM_BE" → "BE"
-            rm_region = employee_info.get('region')  # Region ของ RM ที่ login
+            request_region = approver_employee_id.split('_')[1]  # "RM_BKK" → "BKK"
+            rm_branch = employee_info.get('branch_code')  # Branch ของ RM ที่ login
+            
+            # ⭐ ดึงภูมิภาคทั้งหมดที่ RM คนนี้ดูแล (รองรับ RM ดูแลหลายภาค)
+            rm_regions = get_regions_for_rm(rm_branch)
             
             logger.info(f"  Request region: {request_region}")
-            logger.info(f"  RM region: {rm_region}")
+            logger.info(f"  RM branch: {rm_branch}")
+            logger.info(f"  RM responsible regions: {rm_regions}")
             
-            if request_region != rm_region:
+            # ⭐ เช็คว่า request_region อยู่ในภูมิภาคที่ RM ดูแลหรือไม่
+            if request_region not in rm_regions:
                 raise HTTPException(
                     status_code=403, 
-                    detail=f"You are RM of region {rm_region}, but this request is from region {request_region}"
+                    detail=f"You are RM responsible for regions {rm_regions}, but this request is from region {request_region}"
                 )
         
         elif current_role == 'SDM':
@@ -982,20 +993,25 @@ async def reject_request(request_id: int, rejection_data: RejectionRequest, empl
             if current_status != 'PENDING_RM':
                 raise HTTPException(status_code=403, detail="This request is not pending RM approval")
             
-            # RM ต้องเช็คว่าคำขอมาจากสาขาในภูมิภาคที่ RM ดูแล
+            # ⭐ RM ต้องเช็คว่าคำขอมาจากสาขาในภูมิภาคที่ RM ดูแล
             if not approver_employee_id or not approver_employee_id.startswith('RM_'):
                 raise HTTPException(status_code=400, detail="Invalid approver employee ID for RM")
             
-            request_region = approver_employee_id.split('_')[1]  # "RM_BE" → "BE"
-            rm_region = employee_info.get('region')  # Region ของ RM ที่ login
+            request_region = approver_employee_id.split('_')[1]  # "RM_BKK" → "BKK"
+            rm_branch = employee_info.get('branch_code')  # Branch ของ RM ที่ login
+            
+            # ⭐ ดึงภูมิภาคทั้งหมดที่ RM คนนี้ดูแล (รองรับ RM ดูแลหลายภาค)
+            rm_regions = get_regions_for_rm(rm_branch)
             
             logger.info(f"  Request region: {request_region}")
-            logger.info(f"  RM region: {rm_region}")
+            logger.info(f"  RM branch: {rm_branch}")
+            logger.info(f"  RM responsible regions: {rm_regions}")
             
-            if request_region != rm_region:
+            # ⭐ เช็คว่า request_region อยู่ในภูมิภาคที่ RM ดูแลหรือไม่
+            if request_region not in rm_regions:
                 raise HTTPException(
                     status_code=403, 
-                    detail=f"You are RM of region {rm_region}, but this request is from region {request_region}"
+                    detail=f"You are RM responsible for regions {rm_regions}, but this request is from region {request_region}"
                 )
         
         elif current_role == 'SDM':

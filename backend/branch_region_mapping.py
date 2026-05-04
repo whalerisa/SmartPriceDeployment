@@ -6,7 +6,8 @@ Data is extracted from employees.json to support region derivation when auth_tok
 does not include region information.
 
 Regions:
-- BE: Bangkok East
+- BKK: Bangkok (แยกจาก BE)
+- E: East (แยกจาก BE)
 - N: North
 - S: South
 - NE: Northeast
@@ -21,17 +22,19 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 # Branch to Region mapping extracted from employees.json
-# Note: 00TR is mapped to same region as 90HO (BE)
+# Note: 00TR is mapped to same region as 90HO (BKK)
 BRANCH_REGION_MAP = {
-    # Bangkok East (BE)
-    "00TR": "BE",  # Same as 90HO
-    "01TJ": "BE",
-    "03TS": "BE",
-    "04TP": "BE",
-    "06RY": "BE",
-    "15CB": "BE",
-    "24TL": "BE",
-    "90HO": "BE",
+    # Bangkok (BKK) - แยกจาก BE
+    "00TR": "BKK",
+    "01TJ": "BKK",
+    "03TS": "BKK",
+    "04TP": "BKK",
+    "24TL": "BKK",
+    "90HO": "BKK",
+    
+    # East (E) - แยกจาก BE
+    "06RY": "E",
+    "15CB": "E",
     
     # North (N)
     "11PL": "N",
@@ -68,11 +71,11 @@ def get_region_from_branch(branch_code: str) -> str: #แปลงรหัส�
         branch_code: Branch code from auth token (e.g., "03TS", "12CM")
         
     Returns:
-        Region code (BE, N, S, NE, C) or "Unknown" if branch not found
+        Region code (BKK, E, N, S, NE, C) or "Unknown" if branch not found
         
     Example:
         >>> get_region_from_branch("03TS")
-        'BE'
+        'BKK'
         >>> get_region_from_branch("12CM")
         'N'
         >>> get_region_from_branch("INVALID")
@@ -135,16 +138,68 @@ def get_all_branches_by_region(region: str) -> list: #ดึงรายชื�
     Get all branch codes for a specific region.
     
     Args:
-        region: Region code (BE, N, S, NE, C)
+        region: Region code (BKK, E, N, S, NE, C)
         
     Returns:
         List of branch codes in the specified region
         
     Example:
-        >>> get_all_branches_by_region("BE")
-        ['00TR', '01TJ', '03TS', '04TP', '06RY', '15CB', '24TL', '90HO']
+        >>> get_all_branches_by_region("BKK")
+        ['00TR', '01TJ', '03TS', '04TP', '24TL', '90HO']
     """
     return [branch for branch, reg in BRANCH_REGION_MAP.items() if reg == region]
+
+
+def get_regions_for_rm(rm_branch: str) -> list:
+    """
+    Get all regions that an RM is responsible for based on their branch.
+    
+    Args:
+        rm_branch: RM's branch code (e.g., "90HO")
+        
+    Returns:
+        List of region codes the RM is responsible for
+        
+    Example:
+        >>> get_regions_for_rm("90HO")
+        ['BKK', 'E']  # RM ที่ 90HO ดูแล BKK และ E
+    """
+    # ⭐ หา region ของ branch นี้ก่อน
+    branch_region = get_region_from_branch(rm_branch)
+    
+    # ⭐ ถ้า branch อยู่ใน BKK หรือ E ให้ดูแลทั้ง 2 ภาค
+    if branch_region in ["BKK", "E"]:
+        return ["BKK", "E"]
+    
+    # ⭐ ภาคอื่นๆ ดูแลแค่ภาคของตัวเอง
+    if branch_region != "Unknown":
+        return [branch_region]
+    
+    return []
+
+
+def get_regions_for_rm_by_employee_id(employee_id: str) -> list:
+    """
+    Get all regions that an RM is responsible for based on their employee ID.
+    
+    Args:
+        employee_id: RM's employee ID (e.g., "20054")
+        
+    Returns:
+        List of region codes the RM is responsible for
+        
+    Example:
+        >>> get_regions_for_rm_by_employee_id("20054")
+        ['BKK', 'E']  # RM รหัส 20054 ดูแล BKK และ E
+    """
+    # ⭐ Mapping รหัสพนักงาน RM กับภาคที่ดูแล
+    # TODO: ควรเก็บข้อมูลนี้ใน database หรือ config file
+    rm_employee_regions = {
+        "20054": ["BKK", "E"],  # RM ดูแล Bangkok และ East
+        # เพิ่ม RM คนอื่นๆ ตามต้องการ
+    }
+    
+    return rm_employee_regions.get(employee_id, [])
 
 
 def get_region_name(region_code: str) -> str:
@@ -152,13 +207,14 @@ def get_region_name(region_code: str) -> str:
     Get full region name from region code.
     
     Args:
-        region_code: Region code (BE, N, S, NE, C)
+        region_code: Region code (BKK, E, N, S, NE, C)
         
     Returns:
         Full region name
     """
     region_names = {
-        "BE": "Bangkok East",
+        "BKK": "Bangkok",
+        "E": "East",
         "N": "North",
         "S": "South",
         "NE": "Northeast",

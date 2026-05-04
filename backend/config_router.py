@@ -651,7 +651,8 @@ async def get_region_mapping(employee: dict = Depends(get_current_employee)):
         
         # Build region mapping from employees
         region_names = {
-            "BE": {"name": "Bangkok East", "thai": "กรุงเทพตะวันออก"},
+            "BKK": {"name": "Bangkok", "thai": "กรุงเทพฯ"},
+            "E": {"name": "East", "thai": "ภาคตะวันออก"},
             "N": {"name": "North", "thai": "ภาคเหนือ"},
             "S": {"name": "South", "thai": "ภาคใต้"},
             "NE": {"name": "Northeast", "thai": "ภาคตะวันออกเฉียงเหนือ"},
@@ -743,7 +744,7 @@ async def update_region_manager(
         logger.info(f"📊 Loaded {len(data.get('employees', []))} employees from file")
         
         # Validate region code
-        valid_regions = ["BE", "N", "S", "NE", "C"]
+        valid_regions = ["BKK", "E", "N", "S", "NE", "C"]
         if region_code not in valid_regions:
             raise HTTPException(status_code=404, detail=f"Region {region_code} not found")
         

@@ -23,13 +23,16 @@ logger.info(f"   Is writable: {os.access(IMAGES_DIR, os.W_OK)}")
 # รองรับไฟล์ประเภทนี้
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
+# ขนาดไฟล์สูงสุด: 1 MB
+MAX_FILE_SIZE = 1 * 1024 * 1024  # 1 MB in bytes
+
 
 @router.post("/upload/{sku}")
 async def upload_product_image(sku: str, file: UploadFile = File(...)):
     """
     อัปโหลดรูปภาพสินค้า
     - sku: รหัสสินค้า (SKU)
-    - file: ไฟล์รูปภาพ
+    - file: ไฟล์รูปภาพ (ขนาดไม่เกิน 1 MB)
     """
     logger.info(f"🖼️ Uploading image for SKU: {sku}")
     logger.info(f"   Filename: {file.filename}")
@@ -44,12 +47,30 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
             detail=f"ไฟล์ต้องเป็นประเภท: {', '.join(ALLOWED_EXTENSIONS)}"
         )
     
+    # ตรวจสอบขนาดไฟล์
+    file_size = file.size
+    if file_size is None:
+        # ถ้าไม่สามารถหาขนาดได้ ให้อ่านไฟล์เพื่อตรวจสอบ
+        file_content = await file.read()
+        file_size = len(file_content)
+        await file.seek(0)  # Reset file pointer
+    
+    if file_size > MAX_FILE_SIZE:
+        file_size_mb = file_size / (1024 * 1024)
+        max_size_mb = MAX_FILE_SIZE / (1024 * 1024)
+        logger.warning(f"❌ File size exceeds limit: {file_size_mb:.2f} MB > {max_size_mb:.2f} MB")
+        raise HTTPException(
+            status_code=413,
+            detail=f"ขนาดไฟล์เกินขีดจำกัด ({file_size_mb:.2f} MB > {max_size_mb:.2f} MB)"
+        )
+    
     # สร้างชื่อไฟล์ตาม SKU
     filename = f"{sku}{file_ext}"
     file_path = IMAGES_DIR / filename
     
     logger.info(f"   Saving as: {filename}")
     logger.info(f"   Full path: {file_path}")
+    logger.info(f"   File size: {file_size / (1024 * 1024):.2f} MB")
     
     try:
         # บันทึกไฟล์
@@ -64,7 +85,8 @@ async def upload_product_image(sku: str, file: UploadFile = File(...)):
             "message": f"อัปโหลดรูปภาพสำหรับ SKU: {sku} สำเร็จ",
             "filename": filename,
             "url": f"/static/product-images/{filename}",
-            "file_path": str(file_path)
+            "file_path": str(file_path),
+            "file_size_mb": round(file_path.stat().st_size / (1024 * 1024), 2)
         }
     except Exception as e:
         logger.error(f"❌ Error uploading image: {str(e)}", exc_info=True)

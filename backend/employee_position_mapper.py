@@ -38,7 +38,15 @@ async def find_zm_at_branch(branch_code: str) -> Optional[Dict]:
 
 async def find_rm_in_region(region_code: str) -> Optional[Dict]:
     """Find Regional Manager in region"""
-    region_map = {"BE": "90HO", "N": "12CM", "S": "13SR", "NE": "10KK", "C": "21BS"}
+    # ⭐ อัปเดต: BKK และ E ใช้ RM คนเดียวกัน (90HO)
+    region_map = {
+        "BKK": "90HO",  # Bangkok
+        "E": "90HO",    # East (RM คนเดียวกับ BKK)
+        "N": "12CM",    # North
+        "S": "13SR",    # South
+        "NE": "10KK",   # Northeast
+        "C": "21BS"     # Central
+    }
     branch = region_map.get(region_code)
     if not branch:
         return None
