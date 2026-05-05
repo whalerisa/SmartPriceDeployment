@@ -348,7 +348,7 @@ def aluminium_items(
     conn = get_mssql_conn()
     
     # Build WHERE clause
-    where_clauses = ["im.SKU LIKE 'A%'"]
+    where_clauses = ["im.SKU LIKE 'A%'", "im.Blocked = 0"]
     params = []
     
     # Add branch filter
@@ -454,7 +454,7 @@ def get_cline_items(
     conn = get_mssql_conn()
     
     # Build WHERE clause
-    where_clauses = ["im.SKU LIKE 'C%'"]
+    where_clauses = ["im.SKU LIKE 'C%'", "im.Blocked = 0"]
     params = []
     
     # ⭐ ลบการกรองตามราคา - แสดงสินค้าทั้งหมดแม้ไม่มีราคา
@@ -605,7 +605,7 @@ def get_accessories_items(
     conn = get_mssql_conn()
     
     # Build WHERE clause
-    where_clauses = ["im.SKU LIKE 'E%'", "LEN(im.SKU) >= 11"]
+    where_clauses = ["im.SKU LIKE 'E%'", "LEN(im.SKU) >= 11", "im.Blocked = 0"]
     params = []
     
     # ⭐ ลบการกรองตามราคา - แสดงสินค้าทั้งหมดแม้ไม่มีราคา
@@ -772,7 +772,7 @@ def sealant_items(
     conn = get_mssql_conn()
     
     # Build WHERE clause
-    where_clauses = ["im.SKU LIKE 'S%'"]
+    where_clauses = ["im.SKU LIKE 'S%'", "im.Blocked = 0"]
     params = []
     
     # ⭐ ลบการกรองตามราคา - แสดงสินค้าทั้งหมดแม้ไม่มีราคา
@@ -909,7 +909,7 @@ def gypsum_items(
     conn = get_mssql_conn()
     
     # Build WHERE clause
-    where_clauses = ["im.SKU LIKE 'Y%'", "LEN(im.SKU) >= 18"]
+    where_clauses = ["im.SKU LIKE 'Y%'", "LEN(im.SKU) >= 18", "im.Blocked = 0"]
     params = []
     
     # ⭐ ลบการกรองตามราคา - แสดงสินค้าทั้งหมดแม้ไม่มีราคา
@@ -1079,7 +1079,7 @@ def load_glass_data():
             Product_Group,
             Product_Sub_Group
         FROM Item_Master
-        WHERE SKU LIKE 'G%'
+        WHERE SKU LIKE 'G%' AND Blocked = 0
         ORDER BY SKU
     """)
     rows = cur.fetchall()
@@ -1185,7 +1185,7 @@ def get_glass_list(
     cur = conn.cursor()
     
     # สร้าง WHERE clause สำหรับ filter
-    where_clauses = ["im.SKU LIKE 'G%'"]
+    where_clauses = ["im.SKU LIKE 'G%'", "im.Blocked = 0"]
     params = []
     
     # ⭐ ลบการกรองตามราคา - แสดงสินค้าทั้งหมดแม้ไม่มีราคา
@@ -1454,14 +1454,14 @@ def get_glass_filter_options(
                 im.SKU
             FROM Item_Master im
             LEFT JOIN Item_Price ip WITH (NOLOCK) ON im.SKU = ip.SKU AND ip.BranchCode = ?
-            WHERE im.SKU LIKE 'G%'
+            WHERE im.SKU LIKE 'G%' AND im.Blocked = 0
         """, (branch_code,))
     else:
         # ดึงกระจกทั้งหมด (สำหรับ Promotion)
         cur.execute("""
             SELECT DISTINCT SKU
             FROM Item_Master
-            WHERE SKU LIKE 'G%'
+            WHERE SKU LIKE 'G%' AND Blocked = 0
         """)
     
     skus = [row[0] for row in cur.fetchall()]
