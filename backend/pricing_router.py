@@ -365,12 +365,8 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         .fillna(pd.to_numeric(df_calc.get("product_weight_y"), errors="coerce"))
         .fillna(0)
     )
-    # FIX: Aluminium ต้องมีน้ำหนักอย่างน้อย 1
-    df_calc.loc[
-        (df_calc["category"].astype(str).str.upper() == "A") &
-        (df_calc["product_weight"] <= 0),
-        "product_weight"
-    ] = 1
+    # ⭐ ไม่ตั้งค่าน้ำหนักเป็น 1 - ใช้น้ำหนักจริงจากฐานข้อมูล
+    # ถ้าไม่มีน้ำหนัก (= 0) ราคาจะเป็น 0 บาท
 
 
 
@@ -434,6 +430,15 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     if not customer_code:
         print("\n>>> DEFAULT PRICE MODE: NO CUSTOMER CODE → USE R2\n")
 
+        # ⭐ DEBUG: แสดงข้อมูล product_weight ก่อนคำนวณ
+        print("🔍 DEBUG: product_weight values before calculation:")
+        if "product_weight" in df_calc.columns:
+            for idx, row in df_calc.iterrows():
+                if str(row.get("category", "")).upper() == "A":
+                    print(f"  SKU {row['sku']}: product_weight = {row.get('product_weight', 'N/A')}")
+        else:
+            print("  ⚠️ product_weight column not found!")
+        
         # Tier_Z = 0 means R2
         df_calc["_Tier_Z"] = 0
 
@@ -447,7 +452,13 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             
             if category == "A":
                 # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
-                raw = float(r["NewPrice"]) * float(r.get("product_weight", 0) or 0)
+                weight = float(r.get("product_weight", 0) or 0)
+                new_price = float(r["NewPrice"])
+                raw = new_price * weight
+                
+                # ⭐ DEBUG: แสดงการคำนวณ
+                print(f"🔍 DEBUG [ALUMINIUM]: SKU={r['sku']}, NewPrice={new_price}, weight={weight}, UnitPrice={raw}")
+                
                 return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
             elif category == "G" and is_sold_by_pack:
                 # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง

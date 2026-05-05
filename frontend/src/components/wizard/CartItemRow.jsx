@@ -79,12 +79,14 @@ export default function CartItemRow({ item, index, calculatedItem, dispatch, cus
           )
       : Number(item.UnitPrice ?? item.price ?? 0);
   } else {
+    // ⭐ FIX: ต้องเช็คว่า calculatedItem มีค่าหรือไม่ ไม่ใช่เช็คว่า UnitPrice เป็น 0
+    // เพราะ 0 เป็น falsy จะทำให้ข้ามไปใช้ item.price แทน
     displayUnitPrice = Number(
       (isGlass
         ? item.isSoldByPack
-          ? calculatedItem?.UnitPrice ?? item.UnitPrice ?? item.price ?? 0 // ⭐ ขายยกแพ็ก: ใช้ราคาต่อหน่วยตรงๆ
+          ? (calculatedItem ? calculatedItem.UnitPrice : (item.UnitPrice ?? item.price ?? 0)) // ⭐ ขายยกแพ็ก: ใช้ราคาต่อหน่วยตรงๆ
           : calculatedItem?.price_per_sheet ?? item.price_per_sheet
-        : calculatedItem?.UnitPrice ?? item.UnitPrice ?? item.price) ?? 0
+        : (calculatedItem ? calculatedItem.UnitPrice : (item.UnitPrice ?? item.price))) ?? 0
     );
   }
 
