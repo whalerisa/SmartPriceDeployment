@@ -17,11 +17,11 @@ function AdminConfig() {
   const [regionMapping, setRegionMapping] = useState(null);
   const [editedRegionMapping, setEditedRegionMapping] = useState(null);
 
-  // ตรวจสอบสิทธิ์ admin
+  // ตรวจสอบสิทธิ์ admin หรือ superadmin
   useEffect(() => {
     const isAdmin = employee?.role && 
       typeof employee.role === "string" && 
-      employee.role.toLowerCase() === "admin";
+      (employee.role.toLowerCase() === "admin" || employee.role.toLowerCase() === "superadmin");
     
     if (!isAdmin) {
       navigate("/");
@@ -46,7 +46,7 @@ function AdminConfig() {
         setAvailableRoles(rolesRes.data || []);
       } catch (err) {
         console.error("Failed to load roles:", err);
-        setAvailableRoles(["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"]);
+        setAvailableRoles(["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin", "SuperAdmin"]);
       }
 
       // Load region mapping
@@ -243,13 +243,13 @@ function AdminConfig() {
 
   const isAdmin = employee?.role && 
     typeof employee.role === "string" && 
-    employee.role.toLowerCase() === "admin";
+    (employee.role.toLowerCase() === "admin" || employee.role.toLowerCase() === "superadmin");
 
   if (!isAdmin) {
     return null;
   }
 
-  const builtInRoles = ["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin"];
+  const builtInRoles = ["Sales", "Sales_Project", "ZM", "RM", "SDM", "PM", "CEO", "Admin", "SuperAdmin"];
 
   return (
     <div className="min-h-screen bg-gray-100">

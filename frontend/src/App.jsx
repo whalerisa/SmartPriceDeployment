@@ -3,6 +3,7 @@ import { Routes, Route, Outlet } from "react-router-dom";
 import Dashboard from "./pages/Dashboard.jsx";
 import CreateQuoteWizard from "./pages/CreateQuote/CreateQuoteWizard.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import PageAccessRoute from "./components/PageAccessRoute.jsx";
 import Navbar from "./components/Navbar.jsx";
 import QuoteDraftListPage from "./pages/QuoteDraftListPage.jsx";
 import ConfirmedQuotesPage from "./pages/ConfirmedQuotesPage";
@@ -50,8 +51,6 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/admin-config" element={<AdminConfig />} />
-          <Route path="/update-price" element={<UpdatePrice />} />
-          <Route path="/project-price" element={<ProjectPrice />} />
           <Route path="/quote-drafts" element={<QuoteDraftListPage />} />
           <Route path="/confirmed-quotes" element={<ConfirmedQuotesPage />} />
           <Route path="/order/:id" element={<OrderDetailPage />} />
@@ -59,12 +58,26 @@ function App() {
           <Route path="/customer-search" element={<CustomerSearch />} />
           <Route path="/customer/:customerId" element={<CustomerDetail />} />
           <Route path="/promotions" element={<PromotionManagement />} />
-          <Route path="/special-price-approval" element={<SpecialPriceApproval />} />
+          
+          {/* หน้าที่ต้องตรวจสอบสิทธิ์เฉพาะ */}
+          <Route element={<PageAccessRoute pageId="update_price" />}>
+            <Route path="/update-price" element={<UpdatePrice />} />
+          </Route>
+          
+          <Route element={<PageAccessRoute pageId="project_price" />}>
+            <Route path="/project-price" element={<ProjectPrice />} />
+          </Route>
+          
+          <Route element={<PageAccessRoute pageId="special_price_approval" />}>
+            <Route path="/special-price-approval" element={<SpecialPriceApproval />} />
+          </Route>
         </Route>
 
-        {/* 2.2: CreateQuote (ใช้ WizardLayout) */}
+        {/* 2.2: CreateQuote (ใช้ WizardLayout) - ต้องตรวจสอบสิทธิ์ */}
         <Route element={<WizardLayout />}>
-          <Route path="/create" element={<CreateQuoteWizard />} />
+          <Route element={<PageAccessRoute pageId="create_quote" />}>
+            <Route path="/create" element={<CreateQuoteWizard />} />
+          </Route>
         </Route>
       </Route>
     </Routes>

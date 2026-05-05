@@ -7,7 +7,6 @@
       "Sales_Project",
       "ZM",
       "PM",
-      "Admin",
       "RM",
       "PM_ALUMINIUM",
       "PM_CLINE",
@@ -15,7 +14,9 @@
       "PM_GLASS",
       "PM_GYPSUM",
       "PM_SEALANT",
-      "CEO"
+      "CEO",
+      "SuperAdmin",
+      "Admin"
     ]
   },
   "project_price": {
@@ -34,7 +35,8 @@
       "PM_SEALANT",
       "CEO",
       "SDM",
-      "ZM"
+      "ZM",
+      "SuperAdmin"
     ]
   },
   "special_price_approval": {
@@ -52,7 +54,8 @@
       "PM_GLASS",
       "PM_GYPSUM",
       "PM_SEALANT",
-      "CEO"
+      "CEO",
+      "SuperAdmin"
     ]
   },
   "update_price": {
@@ -66,7 +69,8 @@
       "PM_EQUIPMENT",
       "PM_GLASS",
       "PM_GYPSUM",
-      "PM_SEALANT"
+      "PM_SEALANT",
+      "SuperAdmin"
     ]
   }
 }

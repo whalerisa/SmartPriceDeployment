@@ -14,7 +14,7 @@ function Dashboard() {
   const [currentDate, setCurrentDate] = useState("");
   
   const isAdmin = employee?.role && typeof employee.role === "string" && 
-    employee.role.toLowerCase() === "admin";
+    (employee.role.toLowerCase() === "admin" || employee.role.toLowerCase() === "superadmin");
 
   // โหลดวันที่ปัจจุบัน (ภาษาไทย)
   useEffect(() => {
@@ -311,19 +311,21 @@ function Dashboard() {
     
         {/* --- 2.3 Action Cards (การ์ดทำงาน 2 ใบ) --- */}
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Action 1: สร้างใบเสนอราคา (สีแดง) */}
-          <div
-            className="group relative cursor-pointer overflow-hidden rounded-[33px] bg-red-600/[.85] p-8 text-white shadow-lg transition-all hover:shadow-xl"
-            onClick={handleCreateQuote}
-          >
-            <img src="/assets/plus.png" alt="Arrow" className="w-16 h-16 mb-4 ml-1" />
-            <h2 className="text-4xl font-bold">สร้างใบเสนอราคา</h2>
-            <p className="mt-2 text-lg text-white/70">เริ่มสร้างใบเสนอราคาใหม่</p>
-            <div className="mt-6 flex items-center text-lg font-bold text-white/70 transition-all group-hover:translate-x-1">
-              <span>เริ่มต้นเลย</span>
-              <img src="/assets/right-arrow.png" alt="Arrow" className="w-5 h-5 ml-1" />
+          {/* Action 1: สร้างใบเสนอราคา (สีแดง) - แสดงตามสิทธิ์ */}
+          {pageAccess.create_quote && (
+            <div
+              className="group relative cursor-pointer overflow-hidden rounded-[33px] bg-red-600/[.85] p-8 text-white shadow-lg transition-all hover:shadow-xl"
+              onClick={handleCreateQuote}
+            >
+              <img src="/assets/plus.png" alt="Arrow" className="w-16 h-16 mb-4 ml-1" />
+              <h2 className="text-4xl font-bold">สร้างใบเสนอราคา</h2>
+              <p className="mt-2 text-lg text-white/70">เริ่มสร้างใบเสนอราคาใหม่</p>
+              <div className="mt-6 flex items-center text-lg font-bold text-white/70 transition-all group-hover:translate-x-1">
+                <span>เริ่มต้นเลย</span>
+                <img src="/assets/right-arrow.png" alt="Arrow" className="w-5 h-5 ml-1" />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Action 2: ค้นหาข้อมูลลูกค้า (สีน้ำเงิน) */}
           <div 

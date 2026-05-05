@@ -76,9 +76,9 @@ def get_current_employee(request: Request, authorization: str = Header(None)) ->
 
 
 def check_admin_role(employee_info: dict) -> bool:
-    """Check if user has admin role"""
+    """Check if user has admin or superadmin role"""
     role = employee_info.get("role", "").lower()
-    return role == "admin"
+    return role in ["admin", "superadmin"]
 
 
 def test_api_connection(url: str, headers: dict, timeout: int = 5) -> tuple[bool, str]:
