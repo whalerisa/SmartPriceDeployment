@@ -34,7 +34,8 @@ THAI_ROLE_TO_CODE = {
     "พนักงานขาย": "Sales",
     "พนักงานขายโครงการ": "Sales_Project",  # ⭐ Project Sales
     "ผู้จัดการสาขา (R1-W2)": "ZM",  # Zone Manager
-    "ผู้จัดการภูมิภาค (R1-W2)": "RM",  # Regional Manager
+    "ผู้จัดการภูมิภาค (W2-W1)": "RM",  # Regional Manager
+    "ผู้จัดการภาค (W2-W1)": "RM",  # Regional Manager (alternative name)
     "ผู้จัดการฝ่ายขาย (W1-SDM)": "SDM",  # Sales Director Manager
     "ผู้จัดการผลิตภัณฑ์ (Below SDM)": "PM",  # Product Manager - General
     "ผู้จัดการแผนก": "PM",  # Product Manager - Department Manager (from UXP API)
@@ -45,8 +46,8 @@ THAI_ROLE_TO_CODE = {
     "ผู้จัดการผลิตภัณฑ์ยิปซัม": "PM",  # Product Manager - Gypsum
     "ผู้จัดการผลิตภัณฑ์ซีลแลนท์": "PM",  # Product Manager - Sealant
     "กรรมการผู้จัดการ": "CEO",
-    "ผู้ดูแลระบบ": "Admin",  # System Administrator
-    "ผู้ดูแลระบบสูงสุด": "SuperAdmin",  # Super Administrator
+    "Admin": "Admin",  # System Administrator
+    "SuperAdmin": "SuperAdmin",  # Super Administrator
 }
 
 # Valid role codes (for when role is already in English)

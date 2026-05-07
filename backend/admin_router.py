@@ -299,9 +299,9 @@ async def schedule_price_upload(
     year_buddhist = str(scheduled_dt.year + 543)  # Convert to Buddhist year
     filename = f"{category}{day}{month}{year_buddhist}.xlsx"
     
-    #path - ต้องตรงกับ scheduled_price_upload_standalone.py
-    #scheduled_folder = r"C:\Users\HP\Desktop\Quetung\SmartPriceDeployment\ScheduledPriceUploads"
-    scheduled_folder = r"C:\Users\kongd\Desktop\SP681\UploadsPrice"
+    # Get folder path from environment variable (set by config_router.py)
+    scheduled_folder = os.getenv("PRICE_FILES_FOLDER", "./uploads/price_files")
+    logger.info(f"Using price files folder from config: {scheduled_folder}")
     
     # Create folder if not exists
     try:

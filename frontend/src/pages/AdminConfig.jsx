@@ -170,6 +170,20 @@ function AdminConfig() {
         }
       }
       
+      if (editedConfig?.system_config?.price_files_folder) {
+        const priceFilesValidation = await validateFolderPath(
+          editedConfig.system_config.price_files_folder
+        );
+        if (!priceFilesValidation.is_valid) {
+          setMessage({
+            type: "error",
+            text: `❌ โฟลเดอร์ไฟล์ราคาไม่ถูกต้อง: ${priceFilesValidation.message}`,
+          });
+          setSaving(false);
+          return;
+        }
+      }
+      
       // Save main config
       await api.put("/api/config/settings", editedConfig);
       
@@ -798,6 +812,35 @@ function AdminConfig() {
                       </p>
                       <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
                         <strong>ค่าปัจจุบัน:</strong> {config?.system_config?.product_images_folder || "./uploads/product_images"}
+                      </div>
+                    </div>
+
+                    {/* Price Files Folder */}
+                    <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
+                      <div className="mb-4">
+                        <h4 className="font-semibold text-gray-900">💰 โฟลเดอร์ไฟล์ราคา</h4>
+                        <p className="text-xs text-gray-500">ที่เก็บไฟล์ราคาที่กำหนดวันอัปโหลด (Scheduled Price Files)</p>
+                      </div>
+                      <input
+                        type="text"
+                        value={editedConfig?.system_config?.price_files_folder || "./uploads/price_files"}
+                        onChange={(e) =>
+                          setEditedConfig({
+                            ...editedConfig,
+                            system_config: {
+                              ...editedConfig.system_config,
+                              price_files_folder: e.target.value,
+                            },
+                          })
+                        }
+                        placeholder="เช่น ./uploads/price_files หรือ C:/data/prices"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        💡 ใช้สำหรับไฟล์ราคาที่ต้องการอัปโหลดในวันที่กำหนด
+                      </p>
+                      <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                        <strong>ค่าปัจจุบัน:</strong> {config?.system_config?.price_files_folder || "./uploads/price_files"}
                       </div>
                     </div>
 

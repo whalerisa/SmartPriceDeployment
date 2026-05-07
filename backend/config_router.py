@@ -58,6 +58,7 @@ class SystemConfig(BaseModel):
     project_code_mode: str = "auto"  # ⭐ Project code mode: "auto" (running number) or "manual" (user input)
     project_files_folder: str = "./uploads/project_files"  # ⭐ Folder for project files
     product_images_folder: str = "./uploads/product_images"  # ⭐ Folder for product images
+    price_files_folder: str = "./uploads/price_files"  # ⭐ Folder for scheduled price upload files
 
 
 class ConfigResponse(BaseModel):
@@ -238,6 +239,7 @@ async def get_config(employee: dict = Depends(get_current_employee)):
         project_code_mode = os.getenv("PROJECT_CODE_MODE", "auto")
         project_files_folder = os.getenv("PROJECT_FILES_FOLDER", "./uploads/project_files")
         product_images_folder = os.getenv("PRODUCT_IMAGES_FOLDER", "./uploads/product_images")
+        price_files_folder = os.getenv("PRICE_FILES_FOLDER", "./uploads/price_files")
         
         system_config = SystemConfig(
             base_url=BASE_URL,
@@ -247,7 +249,8 @@ async def get_config(employee: dict = Depends(get_current_employee)):
             vat_rate=vat_rate,
             project_code_mode=project_code_mode,
             project_files_folder=project_files_folder,
-            product_images_folder=product_images_folder
+            product_images_folder=product_images_folder,
+            price_files_folder=price_files_folder
         )
         
         return ConfigResponse(
@@ -344,6 +347,9 @@ async def update_config(
             if "product_images_folder" in sys_cfg:
                 os.environ["PRODUCT_IMAGES_FOLDER"] = sys_cfg["product_images_folder"]
                 env_updates["PRODUCT_IMAGES_FOLDER"] = sys_cfg["product_images_folder"]
+            if "price_files_folder" in sys_cfg:
+                os.environ["PRICE_FILES_FOLDER"] = sys_cfg["price_files_folder"]
+                env_updates["PRICE_FILES_FOLDER"] = sys_cfg["price_files_folder"]
         
         # Persist changes to .env file
         if env_updates:

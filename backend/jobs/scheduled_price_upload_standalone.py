@@ -352,11 +352,10 @@ def run_scheduled_price_upload() -> ScheduledUploadJobResult:
         logger.info(f"   Triggered at: {start_time}")
         logger.info("=" * 80)
         
-        # path 
-        #scheduled_folder = r"C:\Users\HP\Desktop\Quetung\SmartPriceDeployment\ScheduledPriceUploads"
-        scheduled_folder = r"C:\Users\kongd\Desktop\SP681\UploadsPrice"
+        # Get folder path from environment variable (set by config_router.py)
+        scheduled_folder = os.getenv("PRICE_FILES_FOLDER", "./uploads/price_files")
         
-        logger.info(f"📁 Using hardcoded folder path: {scheduled_folder}")
+        logger.info(f"📁 Using price files folder from config: {scheduled_folder}")
         
         if not os.path.exists(scheduled_folder):
             logger.warning(f"Scheduled upload folder not found: {scheduled_folder}")
