@@ -12,6 +12,7 @@ Requirements:
 - Requirement 5: Calculate Aluminum Product Quantities
 - Requirement 6: Display Standard Product Quantities
 """
+#คำนวณตารางฟุต,กิโล,จำนวน จากinvoice
 
 import re
 from typing import Optional, Dict, Any

@@ -228,7 +228,7 @@ async def search_customer(
             detail="กรุณาระบุ code, phone หรือ name อย่างน้อย 1 ค่า",
         )
     
-    # ใช้ MSSQL Database เท่านั้น
+  
     try:
         return await search_customer_from_db(code=code, phone=phone, name=name, product_group=product_group)
     except HTTPException as e:

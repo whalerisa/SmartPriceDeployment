@@ -47,10 +47,8 @@ def run_refresh_in_background():
 @router.get("/refresh-status")
 def get_refresh_status():
     """
-    Get current status of customer cache refresh
-    
-    Returns:
-        Current refresh status including last run time and result
+    DUTY: Get current status of customer cache refresh
+    Returns: Refresh status (running/idle), last run time, result, cache enabled flag
     """
     return {
         "is_running": _refresh_status["is_running"],
@@ -63,13 +61,9 @@ def get_refresh_status():
 @router.post("/refresh-customer-cache")
 def trigger_customer_cache_refresh(background_tasks: BackgroundTasks):
     """
-    Trigger customer cache refresh manually
-    
-    This will run in the background and may take 30-60 minutes.
-    Use /api/cache/refresh-status to check progress.
-    
-    Returns:
-        Confirmation message
+    DUTY: Trigger manual customer cache refresh in background
+    Note: Takes 30-60 minutes. Check status with /api/cache/refresh-status
+    Returns: Confirmation message with start time
     """
     if not USE_DATABASE_CACHE:
         raise HTTPException(
@@ -96,10 +90,8 @@ def trigger_customer_cache_refresh(background_tasks: BackgroundTasks):
 @router.get("/scheduler-status")
 def get_scheduler_status():
     """
-    Get status of background scheduler and scheduled jobs
-    
-    Returns:
-        Scheduler status including next run times for all jobs
+    DUTY: Get status of background scheduler and all scheduled jobs
+    Returns: Scheduler status with next run times for all jobs
     """
     try:
         from jobs.scheduler import get_scheduler_status

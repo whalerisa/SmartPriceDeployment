@@ -71,23 +71,23 @@ class ConfigResponse(BaseModel):
 
 # ==================== Helper Functions ====================
 
-def get_current_employee(request: Request, authorization: str = Header(None)) -> dict:
+def get_current_employee(request: Request, authorization: str = Header(None)) -> dict: #ดึงข้อมูล Employee จาก JWT token
     """Get current employee from JWT token"""
     return get_employee_info(request, authorization)
 
 
-def check_admin_role(employee_info: dict) -> bool:
+def check_admin_role(employee_info: dict) -> bool: #เช็คว่า User เป็น Admin หรือไม่
     """Check if user has admin or superadmin role"""
     role = employee_info.get("role", "").lower()
     return role in ["admin", "superadmin"]
 
 
-def test_api_connection(url: str, headers: dict, timeout: int = 5) -> tuple[bool, str]:
+def test_api_connection(url: str, headers: dict, timeout: int = 5) -> tuple[bool, str]: 
     """Test API connection - DEPRECATED: Not used anymore for security reasons"""
     return False, "API testing disabled for security"
 
 
-def _update_env_file(updates: Dict[str, str]) -> None:
+def _update_env_file(updates: Dict[str, str]) -> None: #อัปเดตไฟล์ .env ด้วยค่าใหม่
     """
     Update .env file with new values.
     
@@ -176,13 +176,7 @@ def _update_env_file(updates: Dict[str, str]) -> None:
 
 # ==================== Endpoints ====================
 
-@router.get("/test")
-async def test_endpoint():
-    """Test endpoint to verify router is working"""
-    return {"message": "Config router is working!"}
-
-
-@router.get("/settings", response_model=ConfigResponse)
+@router.get("/settings", response_model=ConfigResponse) #ดึงการตั้งค่าระบบทั้งหมด เมื่อ Admin เข้าหน้า AdminConfig
 async def get_config(employee: dict = Depends(get_current_employee)):
     """
     Get all system configuration.
@@ -265,7 +259,7 @@ async def get_config(employee: dict = Depends(get_current_employee)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/settings", response_model=dict)
+@router.put("/settings", response_model=dict) #อัปเดตการตั้งค่าระบบ เมื่อ Admin บันทึกการตั้งค่า
 async def update_config(
     config_data: Dict[str, Any],
     employee: dict = Depends(get_current_employee)
@@ -367,7 +361,7 @@ async def update_config(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/roles", response_model=list[str])
+@router.get("/roles", response_model=list[str]) #ดึงรายชื่อ Role ทั้งหมด เมื่อ Admin เข้าหน้า AdminConfig
 async def get_available_roles(employee: dict = Depends(get_current_employee)):
     """
     Get list of all available roles in the system.
@@ -380,7 +374,7 @@ async def get_available_roles(employee: dict = Depends(get_current_employee)):
     return get_all_role_codes()
 
 
-@router.post("/roles", response_model=dict)
+@router.post("/roles", response_model=dict) #สร้าง Role ใหม่ เมื่อ Admin เพิ่ม Role
 async def create_role(
     role_data: Dict[str, Any],
     employee: dict = Depends(get_current_employee)
@@ -470,7 +464,7 @@ async def create_role(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/roles/{role_code}", response_model=dict)
+@router.delete("/roles/{role_code}", response_model=dict) #ลบRole
 async def delete_role(
     role_code: str,
     employee: dict = Depends(get_current_employee)
@@ -552,7 +546,7 @@ async def delete_role(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/page-access/check/{page_id}")
+@router.get("/page-access/check/{page_id}") #เช็คสิทธิ์เข้าถึงหน้า	ทุกครั้งที่ User เข้าหน้า
 async def check_page_access_endpoint(
     page_id: str,
     employee: dict = Depends(get_current_employee)
@@ -582,7 +576,7 @@ async def check_page_access_endpoint(
     }
 
 
-@router.get("/page-access/user-pages")
+@router.get("/page-access/user-pages") #ดึงหน้าที่ User เข้าได้	เมื่อ User เข้าระบบ
 async def get_user_pages(employee: dict = Depends(get_current_employee)):
     """
     Get list of pages that the current user can access.
@@ -620,7 +614,7 @@ class RegionMappingResponse(BaseModel):
     regions: Dict[str, RegionInfo]
 
 
-@router.get("/regions", response_model=RegionMappingResponse)
+@router.get("/regions", response_model=RegionMappingResponse) #ดึงการจัดการภาค	เมื่อ Admin เข้าหน้า AdminConfig
 async def get_region_mapping(employee: dict = Depends(get_current_employee)):
     """
     Get region to RM mapping configuration from employees.json.
@@ -697,7 +691,7 @@ async def get_region_mapping(employee: dict = Depends(get_current_employee)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/regions/{region_code}", response_model=dict)
+@router.put("/regions/{region_code}", response_model=dict) #อัปเดต RM ของภาค เมื่อ Admin เปลี่ยน RM
 async def update_region_manager(
     region_code: str,
     update_data: Dict[str, Any],
@@ -855,7 +849,7 @@ class FolderValidationResponse(BaseModel):
     absolute_path: Optional[str] = None
 
 
-@router.post("/validate-folder", response_model=FolderValidationResponse)
+@router.post("/validate-folder", response_model=FolderValidationResponse) #ตรวจสอบโฟลเดอร์ เมื่อ Admin บันทึกการตั้งค่า
 async def validate_folder_path(
     request: FolderValidationRequest,
     employee: dict = Depends(get_current_employee)

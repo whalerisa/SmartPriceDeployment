@@ -124,13 +124,7 @@ def Price(df: pd.DataFrame) -> pd.DataFrame:
             .upper()
         )
 
-        
-        # debug
-        print("TIER USED:", tier)
-        
         col_low, col_high = INTERP_COLS.get(tier, DEFAULT_COLS)
-
-        
         try:
             low_price = float(row.get(col_low))
             high_price = float(row.get(col_high))
@@ -184,9 +178,6 @@ def Price(df: pd.DataFrame) -> pd.DataFrame:
             
             credit_key = category_map.get(category, "ae")
             days = credit_terms.get(credit_key, None)
-            
-            if days is not None:
-                print(f"[CREDIT API] Using credit_terms for category {category}: {days} days from {credit_key}")
         
         # ถ้าไม่มี credit_terms หรือไม่เจอ ให้ใช้วิธีเดิม (parse จาก payment_terms string)
         if days is None:
@@ -201,17 +192,6 @@ def Price(df: pd.DataFrame) -> pd.DataFrame:
                     days = 0
 
         pct = term_markup.get(days, 0.0)
-
-        print(
-            "[PAYMENT TERM DEBUG]",
-            "sku =", row.get("sku"),
-            "category =", category,
-            "term =", term,
-            "days =", days,
-            "base =", base_price,
-            "pct =", pct,
-            "after =", base_price * (1 + pct),
-        )
 
         return base_price * (1 + pct)
     
@@ -233,28 +213,5 @@ def Price(df: pd.DataFrame) -> pd.DataFrame:
             return 0.0
 
     out["NewPrice"] = out["NewPrice"].apply(_safe_ceil)
-    # ✅ =============================================
-
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", None)
-    pd.set_option("display.max_colwidth", None)
-    pd.set_option("display.expand_frame_repr", False)
-    # ===== DEBUG LOG =====
-    print("\n=== PRICE SCORE DEBUG ===")
-    debug_cols = [
-        "sku" if "sku" in out.columns else None,
-        COL_TIER,
-        "_QtyScore",
-        "_EScore",
-        "_ShipScore",
-        "_Score01",
-        "NewPrice",
-    ]
-    debug_cols = [c for c in debug_cols if c]
-
-    print(out[debug_cols].head(10))
-    print("=== END PRICE DEBUG ===\n")
-
-    
 
     return out

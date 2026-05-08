@@ -10,7 +10,7 @@ from config.config_external_api import EMP_QUERY_API_URL, EMP_QUERY_API_HEADERS
 logger = logging.getLogger(__name__)
 
 async def query_employee_by_role(role_name: str, branch_code: str = None, app_name: str = "Smart Quotation") -> Optional[Dict]:
-    """Query employee from API by role and branch"""
+    """DUTY: Query UXP Auth API to find employee by role and branch | WHEN: Called by other functions to resolve approvers"""
     try:
         params = {"roleName": role_name, "appName": app_name}
         if branch_code:
@@ -29,7 +29,7 @@ async def query_employee_by_role(role_name: str, branch_code: str = None, app_na
         return None
 
 async def find_zm_at_branch(branch_code: str) -> Optional[Dict]:
-    """Find Zone Manager at branch"""
+    """DUTY: Find Zone Manager at specific branch | WHEN: Quote creation, approval routing"""
     emp = await query_employee_by_role("ผู้จัดการสาขา (R1-W2)", branch_code)
     if emp:
         return {"employee_id": emp.get("username"), "branch": emp.get("branchCode"), 
@@ -37,8 +37,7 @@ async def find_zm_at_branch(branch_code: str) -> Optional[Dict]:
     return None
 
 async def find_rm_in_region(region_code: str) -> Optional[Dict]:
-    """Find Regional Manager in region"""
-    # ⭐ อัปเดต: BKK และ E ใช้ RM คนเดียวกัน (90HO)
+    """DUTY: Find Regional Manager for region (maps BKK/E→90HO, N→12CM, S→13SR, NE→10KK, C→21BS) | WHEN: Quote approval routing"""
     region_map = {
         "BKK": "90HO",  # Bangkok
         "E": "90HO",    # East (RM คนเดียวกับ BKK)
@@ -50,69 +49,25 @@ async def find_rm_in_region(region_code: str) -> Optional[Dict]:
     branch = region_map.get(region_code)
     if not branch:
         return None
-    emp = await query_employee_by_role("ผู้จัดการภูมิภาค (R1-W2)", branch)
+    emp = await query_employee_by_role("ผู้จัดการภาค (W2-W1)", branch)
     if emp:
         return {"employee_id": emp.get("username"), "branch": emp.get("branchCode"),
                 "name": emp.get("empName"), "role": "RM", "region": region_code}
     return None
 
 async def find_sdm() -> Optional[Dict]:
-    """Find Sales Director Manager"""
+    """DUTY: Find Sales Director Manager at 90HO | WHEN: High-value quote approval, special price requests""" 
     emp = await query_employee_by_role("ผู้จัดการฝ่ายขาย (W1-SDM)", "90HO")
     if emp:
         return {"employee_id": emp.get("username"), "branch": emp.get("branchCode"),
                 "name": emp.get("empName"), "role": "SDM", "region": "ALL"}
     return None
 
-async def resolve_approver_position(position_id: str) -> Optional[Dict]:
-    """Resolve position ID to employee (ZM_03TS -> employee info)"""
-    if not position_id or "_" not in position_id:
-        return None
-    role, identifier = position_id.split("_", 1)
-    if role == "ZM":
-        return await find_zm_at_branch(identifier)
-    elif role == "RM":
-        return await find_rm_in_region(identifier)
-    elif role == "SDM":
-        return await find_sdm()
-    return None
 
-
-async def find_pm() -> Optional[Dict]:
-    """Find Product Manager"""
-    emp = await query_employee_by_role("ผู้จัดการผลิตภัณฑ์ (Below SDM)", "90HO")
-    if emp:
-        return {"employee_id": emp.get("username"), "branch": emp.get("branchCode"),
-                "name": emp.get("empName"), "role": "PM", "region": "ALL"}
-    return None
-
-async def find_ceo() -> Optional[Dict]:
-    """Find CEO"""
-    emp = await query_employee_by_role("กรรมการผู้จัดการ", "90HO")
-    if emp:
-        return {"employee_id": emp.get("username"), "branch": emp.get("branchCode"),
-                "name": emp.get("empName"), "role": "CEO", "region": "ALL"}
-    return None
-
-async def find_sales_at_branch(branch_code: str) -> Optional[Dict]:
-    """Find Sales at branch"""
-    emp = await query_employee_by_role("พนักงานขาย", branch_code)
-    if emp:
-        return {"employee_id": emp.get("username"), "branch": emp.get("branchCode"),
-                "name": emp.get("empName"), "role": "Sales"}
-    return None
 
 
 async def find_pm_by_category(category: str) -> Optional[Dict]:
-    """
-    Find Product Manager by product category
-    
-    Args:
-        category: Product category (G, A, C, Y, S, E)
-    
-    Returns:
-        PM employee info or None
-    """
+    """DUTY: Find Product Manager by category (G, A, C, Y, S, E) | WHEN: Category-specific approvals, special price requests"""
     category_map = {
         'G': 'ผู้จัดการผลิตภัณฑ์กระจก',
         'A': 'ผู้จัดการผลิตภัณฑ์อลูมิเนียม',
@@ -144,15 +99,7 @@ async def find_pm_by_category(category: str) -> Optional[Dict]:
 
 
 async def find_all_pms_by_categories(categories: list) -> Dict[str, Dict]:
-    """
-    Find all PMs for given product categories
-    
-    Args:
-        categories: List of product categories (G, A, C, Y, S, E)
-    
-    Returns:
-        Dictionary mapping category to PM info
-    """
+    """DUTY: Find all PMs for multiple categories | WHEN: Multi-category quote approvals"""
     pms = {}
     for category in categories:
         pm = await find_pm_by_category(category)

@@ -202,11 +202,7 @@ def calculate_statistics_from_database() -> Dict:
         if not rows:
             raise Exception("No customer data found for statistics calculation")
         
-        # Debug: Check what we got from SQL
-        print(f"📊 Fetched {len(rows)} customers from database")
-        if rows:
-            print(f"📊 First row: {rows[0]}")
-            print(f"📊 First row type: {type(rows[0])}")
+
         
         # Convert rows directly - pyodbc returns tuples
         data = []
@@ -223,8 +219,6 @@ def calculate_statistics_from_database() -> Dict:
         
         if not data:
             raise Exception(f"No valid data after processing. Total rows fetched: {len(rows)}")
-        
-        print(f"📊 Successfully processed {len(data)} rows")
         
         # Create DataFrame
         df = pd.DataFrame(data, columns=['accum_6m', 'frequency', 'tenure_years'])
@@ -252,11 +246,6 @@ def calculate_statistics_from_database() -> Dict:
             "tenure_mean": float(df['tenure_years'].mean()),
             "tenure_sd": float(df['tenure_years'].std())
         }
-        
-        print(f"✅ Calculated statistics from {len(df)} customers:")
-        print(f"   - Accum 6M (ln): mean={stats['accum_6m_ln_mean']:.2f}, sd={stats['accum_6m_ln_sd']:.2f}")
-        print(f"   - Frequency: mean={stats['frequency_mean']:.2f}, sd={stats['frequency_sd']:.2f}")
-        print(f"   - Tenure: mean={stats['tenure_mean']:.2f}, sd={stats['tenure_sd']:.2f}")
         
         cursor.close()
         conn.close()

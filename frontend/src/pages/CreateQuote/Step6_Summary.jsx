@@ -32,53 +32,47 @@ import { uiKeyOf, pricingKeyOf, printKeyOf } from "./utils/quoteKeys";
 import { getCustomerCode } from "./utils/customer";
 import { fmtTHB } from "./utils/format";
 
-// ---- Icons ----
-const FileIcon = () => (
-  <img src="/assets/folder.png" alt="Print" className="h-6 w-6 mr-2 object-contain" />
-);
+// ---- Import Hooks ----
+import { useStep6Data } from "./hooks/useStep6Data.js";
+import { useStep6Stock } from "./hooks/useStep6Stock.js";
+import { useStep6Pricing } from "./hooks/useStep6Pricing.js";
+import { useStep6History } from "./hooks/useStep6History.js";
 
-const SaveIcon = () => (
-  <img src="/assets/Save.png" alt="Print" className="h-5 w-5 mr-2 object-contain" />
-);
-
-const DraftIcon = () => (
-  <img src="/assets/draft.png" alt="Print" className="h-6 w-6 mr-2 object-contain" />
-);
-
-const PrintIcon = () => (
-  <img src="/assets/printer.png" alt="Print" className="h-5 w-5 mr-2 object-contain" />
-);
-
-const ArrowLeftIcon = () => (
-  <svg
-    className="w-5 h-5 mr-2"
-    fill="none"
-    viewBox="0 0 24 24"
-    strokeWidth={2}
-    stroke="currentColor"
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-  </svg>
-);
-
-const SummaryRow = ({ label, value, isTotal = false, loading = false }) => (
-  <div className="flex justify-between py-2">
-    <span className={`font-semibold ${isTotal ? "text-lg text-gray-900" : "text-gray-600"}`}>
-      {label}
-    </span>
-    <span className={`font-bold ${isTotal ? "text-xl text-blue-600" : "text-gray-800"}`}>
-      {loading ? (
-        <span className="inline-block h-4 w-24 animate-pulse rounded-md bg-gray-300" />
-      ) : (
-        value
-      )}
-    </span>
-  </div>
-);
+// ---- Import Icons & Components ----
+import { FileIcon, SaveIcon, DraftIcon, PrintIcon, ArrowLeftIcon } from "./components/Step6Icons.jsx";
+import { SummaryRow } from "./components/Step6SummaryRow.jsx";
 
 function Step6_Summary({ state, dispatch }) {
   const { employee } = useAuth();
   const navigate = useNavigate();
+
+  // ---- Use Hooks ----
+  const { 
+    vatRate, 
+    specialPriceRequest, 
+    activeSpecialPrices, 
+    branches, 
+    isPreOrder, 
+    setIsPreOrder,
+    requiredDeliveryDate, 
+    setRequiredDeliveryDate,
+    branchesLoading 
+  } = useStep6Data(state);
+
+  const { 
+    selectedItemStock, 
+    stockLoading, 
+    selectedItemForStock, 
+    fetchItemStock 
+  } = useStep6Stock(state.cart);
+
+  const { 
+    calculation, 
+    setCalculation,
+    cartItemsKey 
+  } = useStep6Pricing(state.cart);
+
+  const { handleRepeatFromHistory } = useStep6History(dispatch);
 
   //search
   const [productSearch, setProductSearch] = useState("");
@@ -86,16 +80,10 @@ function Step6_Summary({ state, dispatch }) {
   const [showDropdown, setShowDropdown] = useState(false);
   const CATEGORY_ORDER = ["G", "A", "C", "Y", "S", "E"];
 
-
   // ประวัติการซื้อ
   const [historyOrders, setHistoryOrders] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
-  
-  // สต๊อกสินค้า
-  const [selectedItemStock, setSelectedItemStock] = useState(null);
-  const [stockLoading, setStockLoading] = useState(false);
-  const [selectedItemForStock, setSelectedItemForStock] = useState(null);
 
   // local UI state
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -104,101 +92,8 @@ function Step6_Summary({ state, dispatch }) {
   const [editingShippingCost, setEditingShippingCost] = useState(false);
   const [tempShippingCost, setTempShippingCost] = useState(0);
 
-  // Branches for IBT
-  const [branches, setBranches] = useState([]);
-  const [branchesLoading, setBranchesLoading] = useState(false);
-
   // Product browser state
   const [productFilters, setProductFilters] = useState({});
-  
-  // Special Price Request state
-  const [specialPriceRequest, setSpecialPriceRequest] = useState(null);
-  const [loadingSPR, setLoadingSPR] = useState(false);
-  
-  // ⭐ VAT Rate state
-  const [vatRate, setVatRate] = useState(0.07);
-  
-  // Load VAT rate from config
-  useEffect(() => {
-    const loadVatRate = async () => {
-      try {
-        const response = await api.get("/api/config/settings");
-        const rate = response.data?.system_config?.vat_rate || 0.07;
-        setVatRate(rate);
-        console.log('[VAT] Loaded VAT rate:', rate);
-      } catch (err) {
-        console.log('[VAT] Failed to load VAT rate, using default 0.07');
-        setVatRate(0.07);
-      }
-    };
-    
-    loadVatRate();
-  }, []);
-  
-  // Load special price request when quote is loaded
-  useEffect(() => {
-    const loadSpecialPriceRequest = async () => {
-      if (!state.quoteNo) return;
-      
-      try {
-        setLoadingSPR(true);
-        const response = await api.get(`/api/special-price-requests/quote/${encodeURIComponent(state.quoteNo)}`);
-        const spr = response.data;
-        setSpecialPriceRequest(spr);
-        console.log('[SPR] Loaded special price request:', spr);
-      } catch (err) {
-        console.log('[SPR] No special price request found for this quote');
-        setSpecialPriceRequest(null);
-      } finally {
-        setLoadingSPR(false);
-      }
-    };
-    
-    loadSpecialPriceRequest();
-  }, [state.quoteNo]);
-
-  // Load active special prices for customer
-  const [activeSpecialPrices, setActiveSpecialPrices] = useState(null);
-  useEffect(() => {
-    const loadActiveSpecialPrices = async () => {
-      const customerCode = getCustomerCode(state.customer);
-      if (!customerCode) return;
-      
-      try {
-        console.log('[ACTIVE PRICES] Loading for customer:', customerCode);
-        const response = await api.get(`/api/special-price-requests/active-prices/${customerCode}`);
-        setActiveSpecialPrices(response.data);
-        console.log('[ACTIVE PRICES] Loaded:', response.data);
-        console.log('[ACTIVE PRICES] Items:', response.data?.items);
-        if (response.data?.items) {
-          console.log('[ACTIVE PRICES] Item codes:', response.data.items.map(i => i.item_code));
-        }
-      } catch (err) {
-        console.log('[ACTIVE PRICES] No active prices found:', err);
-        setActiveSpecialPrices(null);
-      }
-    };
-    
-    loadActiveSpecialPrices();
-  }, [state.customer]);
-
-  // Load branches for IBT
-  useEffect(() => {
-    const loadBranches = async () => {
-      try {
-        setBranchesLoading(true);
-        const res = await api.get('/api/branches');
-        setBranches(res.data.branches || []);
-      } catch (err) {
-        console.error('Error loading branches:', err);
-        setBranches([]);
-      } finally {
-        setBranchesLoading(false);
-      }
-    };
-    
-    loadBranches();
-  }, []);
 
   const [productItems, setProductItems] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -232,233 +127,15 @@ function Step6_Summary({ state, dispatch }) {
   const [priceEditReason, setPriceEditReason] = useState("");
   const [pendingSaveStatus, setPendingSaveStatus] = useState(null);
   const [shippingEdited, setShippingEdited] = useState(false);
-  const [isPreOrder, setIsPreOrder] = useState(false);
-  const [requiredDeliveryDate, setRequiredDeliveryDate] = useState("");
-
-  // โหลด pre_order และ required_delivery_date จาก quote header เมื่อเป็น draft
-  useEffect(() => {
-    const loadPreOrderStatus = async () => {
-      if (!state.quoteNo) {
-        setIsPreOrder(false);
-        setRequiredDeliveryDate("");
-        return;
-      }
-
-      try {
-        const res = await api.get(`/api/quotation/${state.quoteNo}`);
-        const preOrderValue = res.data?.header?.Pre_Order ?? res.data?.header?.pre_order ?? 0;
-        const requiredDate = res.data?.header?.Required_Delivery_Date ?? res.data?.header?.required_delivery_date ?? "";
-        setIsPreOrder(preOrderValue === 1);
-        setRequiredDeliveryDate(requiredDate ? requiredDate.split("T")[0] : "");
-      } catch (err) {
-        console.error('Error loading pre-order status:', err);
-        setIsPreOrder(false);
-        setRequiredDeliveryDate("");
-      }
-    };
-
-    loadPreOrderStatus();
-  }, [state.quoteNo]);
 
   const sumCartLineTotal = (cart) =>
     cart.reduce((sum, it) => sum + Number(it.lineTotal ?? 0), 0);
-
-
-
-  // ราคาที่ได้จาก backend
-  const [calculation, setCalculation] = useState({
-    cart: [],
-    totals: {},
-    loading: true,
-    error: null,
-  });
-
 
   const handleCrossSellAdd = (ruleItem) => {
     // TODO: เปิด modal ค้นหาสินค้า
     // filter ด้วย ruleItem.displayName หรือ ruleItem.ruleGroup
     console.log("cross sell add:", ruleItem);
   };
-
-  const handleRepeatFromHistory = async (order) => {
-    if (!order) return;
-
-    console.log("=== REPEAT CLICKED ===");
-    console.log("order.id:", order?.id);
-    console.log("order.cart (raw from API):", order?.cart);
-
-    try {
-      // ⭐ เรียก API เพื่อตรวจสอบวันหมดอายุ
-      const quoteNo = order.quoteNo || order.id;
-      const response = await api.post(`/api/quotation/${quoteNo}/reorder`);
-      const { quote, isExpired, daysExpired } = response.data;
-
-      // ⭐ แจ้งเตือนถ้าหมดอายุ
-      if (isExpired) {
-        const confirmReorder = window.confirm(
-          `ใบเสนอราคานี้หมดอายุแล้ว ${daysExpired} วัน\n` +
-          `ระบบได้คำนวณราคาใหม่ตามราคาปัจจุบันแล้ว\n\n` +
-          `คุณต้องการดำเนินการต่อหรือไม่?`
-        );
-        
-        if (!confirmReorder) {
-          return; // ยกเลิกการซื้อซ้ำ
-        }
-      }
-
-      (quote?.cart || []).forEach((it, i) => {
-        console.log(`[order.cart][${i}]`, {
-          sku: it.sku,
-          qty: it.qty,
-          price: it.price,
-          lineTotal: it.lineTotal,
-          sqft_sheet: it.sqft_sheet,
-          Sqft_Sheet: it.Sqft_Sheet,
-          variantCode: it.variantCode,
-          VariantCode: it.VariantCode,
-        });
-      });
-
-      console.log('🔍 [DRAFT] Quote object:', {
-        project_code: quote.project_code,
-        ProjectCode: quote.ProjectCode,
-        all_keys: Object.keys(quote),
-        customer: quote.customer,
-        deliveryType: quote.deliveryType,
-      });
-
-      dispatch({
-        type: "LOAD_DRAFT",
-        payload: {
-          id: null,
-          quoteNo: null,
-
-          customer: {
-            id: quote.customer?.id || quote.customer?.code || "",
-            code: quote.customer?.id || quote.customer?.code || "",
-            name: quote.customer?.name || "",
-            phone: quote.customer?.phone || "",
-            _needsHydrate: true, // ⭐ ให้ Step6 auto search
-          },
-
-          deliveryType: quote.deliveryType ?? "PICKUP",
-          note: quote.note ?? "",
-          expireDate: quote.expireDate || null,
-          project_code: quote.project_code || null,  // ⭐ เพิ่ม project_code
-
-          cart: (quote.cart || []).map((it) => ({
-            ...it,
-            // ⭐ normalize สำคัญมาก
-            sqft_sheet: Number(it.sqft_sheet ?? it.Sqft_Sheet ?? it.sqft ?? 0),
-            variantCode: it.variantCode ?? it.VariantCode ?? "",
-            price: Number(it.price ?? 0),
-            lineTotal: Number(it.lineTotal ?? 0),
-            Price_System: Number(it.Price_System ?? 0),
-            
-            source: "db", // ⭐ ใช้ราคาที่ Backend คำนวณมาแล้ว
-            needsPricing: false, // ⭐ ไม่ต้องคำนวณอีก
-            isDraftItem: true,
-          })),
-
-          totals: {
-            exVat: 0,
-            vat: 0,
-            grandTotal: 0,
-            shippingRaw: 0,
-            shippingCustomerPay: 0,
-            shippingCompanyPay: 0,
-          },
-        },
-      });
-    } catch (error) {
-      console.error("Error checking quote expiration:", error);
-      
-      // ถ้า API ล้มเหลว ให้ใช้วิธีเดิม
-      dispatch({
-        type: "LOAD_DRAFT",
-        payload: {
-          id: null,
-          quoteNo: null,
-
-          customer: {
-            id: order.customer?.id || order.customer?.code || "",
-            code: order.customer?.id || order.customer?.code || "",
-            name: order.customer?.name || "",
-            phone: order.customer?.phone || "",
-            _needsHydrate: true,
-          },
-
-          deliveryType: order.deliveryType ?? "PICKUP",
-          note: order.note ?? "",
-          expireDate: order.expireDate || null,
-
-          cart: (order.cart || []).map((it) => ({
-            ...it,
-            sqft_sheet: Number(it.sqft_sheet ?? it.Sqft_Sheet ?? it.sqft ?? 0),
-            variantCode: it.variantCode ?? it.VariantCode ?? "",
-            source: "db",
-            needsPricing: false,
-            isDraftItem: true,
-          })),
-
-          totals: {
-            exVat: 0,
-            vat: 0,
-            grandTotal: 0,
-            shippingRaw: 0,
-            shippingCustomerPay: 0,
-            shippingCompanyPay: 0,
-          },
-        },
-      });
-    }
-  };
-  
-  // ⭐ ฟังก์ชันดึงสต๊อกสินค้า
-  const fetchItemStock = async (sku) => {
-    if (!sku) return;
-    
-    setStockLoading(true);
-    try {
-      const res = await api.get(`/api/items/${sku}/stock`);
-      setSelectedItemStock(res.data);
-      setSelectedItemForStock(sku);
-    } catch (err) {
-      console.error("Error fetching stock:", err);
-      setSelectedItemStock(null);
-    } finally {
-      setStockLoading(false);
-    }
-  };
-  
-  // ⭐ Auto-fetch สต๊อกเมื่อมีสินค้าในตะกร้า
-  useEffect(() => {
-    if (state.cart && state.cart.length > 0) {
-      // ถ้ายังไม่เคยเลือกสินค้า หรือสินค้าที่เลือกไว้ไม่อยู่ในตะกร้าแล้ว
-      const currentItemExists = state.cart.some(item => item.sku === selectedItemForStock);
-      
-      if (!selectedItemForStock || !currentItemExists) {
-        // ดึงสต๊อกของสินค้าตัวแรก หรือสินค้าตัวล่าสุดที่เพิ่มเข้ามา
-        const latestItem = state.cart[state.cart.length - 1];
-        fetchItemStock(latestItem.sku);
-      }
-    } else {
-      // ถ้าไม่มีสินค้าในตะกร้า ให้ clear สต๊อก
-      setSelectedItemStock(null);
-      setSelectedItemForStock(null);
-    }
-  }, [state.cart]);
-
-  // ⭐ Track cart items ที่ต้องคำนวณ (ป้องกัน infinite loop)
-  const cartItemsKey = useMemo(() => {
-    if (!state.cart || state.cart.length === 0) return 'empty';
-    
-    // สร้าง key จาก SKU + qty + needsPricing เท่านั้น
-    return state.cart
-      .map(it => `${it.sku}:${it.qty}:${it.needsPricing ? '1' : '0'}:${it.priceSource || 'system'}`)
-      .sort()
-      .join('|');
-  }, [state.cart]);
 
   useEffect(() => {
     if (state.status === "open") {

@@ -20,13 +20,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/branches", tags=["branches"])
 
 
-@router.get("") #ดึงชื่อสาขาทั้งหมด
+@router.get("")
 def get_branches():
     """
-    Get all branches from MSSQL Branch table.
-    
-    Returns:
-        List of branches with Code and Name
+    DUTY: Fetch all branches from database
+    Returns: List of all branches with Code and Name
     """
     conn = None
     try:
@@ -61,13 +59,11 @@ def get_branches():
             conn.close()
 
 
-@router.get("/regions")
+@router.get("/regions") #Fetch all regions with their branches grouped by region
 def get_regions():
     """
-    Get all available regions with their branch information.
-    
-    Returns:
-        List of regions with code, name, and branches
+    DUTY: Fetch all regions with their associated branches
+    Returns: List of regions (BE, N, S, NE, C) with branches grouped by region
     """
     try:
         conn = get_mssql_conn()
@@ -119,16 +115,12 @@ def get_regions():
         )
 
 
-@router.get("/regions/{region_code}")
+@router.get("/regions/{region_code}") #Fetch branches for a specific region (BE, N, S, NE, C)
 def get_branches_by_region(region_code: str):
     """
-    Get all branches for a specific region.
-    
-    Args:
-        region_code: Region code (BE, N, S, NE, C)
-        
-    Returns:
-        List of branches in the specified region
+    DUTY: Fetch branches for a specific region
+    Args: region_code (BE, N, S, NE, C)
+    Returns: List of branches in the specified region
     """
     try:
         conn = get_mssql_conn()

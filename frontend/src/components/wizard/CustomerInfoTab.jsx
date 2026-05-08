@@ -323,7 +323,7 @@ const CustomerInfoTab = ({ customer, customerCode }) => {
           <div className="text-center">
             <p className="text-xs text-gray-500 mb-1">ยอดซื้อเฉลี่ย 6 เดือน</p>
             <p className="text-3xl font-bold text-gray-800">
-              {formatCurrency(customerData?.accum_6m || 0)} บาท
+              {formatCurrency(customerData?.accum_6m/6 || 0)} บาท
             </p>
           </div>
         </div>

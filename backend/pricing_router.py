@@ -1,7 +1,7 @@
+import os
+import math
 import pandas as pd
 import numpy as np
-import math
-import requests
 from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Body, Depends
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ from price import Price
 from config.db_mssql import get_mssql_conn
 from auth_dependency import get_branch_code
 
+#Special->Manual->Project->History->System
 
 router = APIRouter(prefix="/api/pricing", tags=["pricing"])
 
@@ -49,24 +50,14 @@ class PricingRequest(BaseModel):
     needTaxInvoice: bool = False  # ⭐ เพิ่ม flag สำหรับใบกำกับภาษี
 
 
-# -------------------------------
-#  CATEGORY SALES MAPPING
-# -------------------------------
-def _num(x):
-    try:
-        v = pd.to_numeric(x, errors="coerce")
-        return 0 if pd.isna(v) else float(v)
-    except Exception:
-        return 0
+# ========================
+# HELPER FUNCTIONS
+# ========================
 
-
-
-# -------------------------------
-#  SAFE DEBUG
-# -------------------------------
 def _safe_print_df(df, cols, title):
+    """Debug: Print DataFrame columns safely"""
     try:
-        print("\n=== " + title)
+        print(f"\n=== {title}")
         existing = [c for c in cols if c in df.columns]
         print(df[existing].head().to_string(index=False))
         print("===")
@@ -107,15 +98,11 @@ def calculate_tax_invoice_surcharge(item_count: int) -> float:
 
 
 def get_vat_rate() -> float:
-    """
-    ⭐ Get VAT rate from config (default 0.07 = 7%)
-    """
-    import os
+    """Get VAT rate from environment (default 0.07 = 7%)"""
     try:
         vat_rate_str = os.getenv("VAT_RATE", "0.07")
-        vat_rate = float(vat_rate_str)
-        return vat_rate
-    except:
+        return float(vat_rate_str)
+    except (ValueError, TypeError):
         return 0.07
 
 # -------------------------------
@@ -127,13 +114,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     # No items
     if not req.cart:
         return {"items": [], "subtotal": 0, "customer_tier": "N/A"}
-    
-    # ⭐ ไม่ต้องดึง product_group จาก SKU ตัวแรกแล้ว
-    # จะใช้ category (อักษรตัวแรกของ SKU) ของแต่ละสินค้าแทน
-    
-    print(f"🔍 DEBUG: Branch Code from JWT: '{branch_code}'")
-    print(f"🔍 DEBUG: All SKUs in cart: {[item.sku for item in req.cart]}")
-    print(f"🔍 DEBUG: Customer Data keys: {list(req.customerData.keys())}")
 
     # ⭐ Load active special prices for customer
     special_prices_dict = {}
@@ -203,7 +183,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
         # Add branch_code as first parameter, then SKUs
         params = [branch_code] + skus
-        print(f"🔍 DEBUG SQL: branch_code='{branch_code}', skus={skus[:3]}...")  # Show first 3 SKUs
         df = pd.read_sql(sql, conn, params=params)
         conn.close()
 
@@ -213,10 +192,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         # normalize price columns (เหมือนของเดิม)
         for c in ["R1", "R2", "W1", "W2", "SDM"]:
             df[f"price{c}"] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-        
-        print(f"🔍 DEBUG: Loaded {len(df)} items, sample prices:")
-        if not df.empty:
-            print(df[["sku", "R2", "R1", "W2", "W1", "SDM", "priceR2", "priceR1", "priceW2", "priceW1", "priceSDM"]].head(3).to_string(index=False))
 
         df["pkg_size"] = pd.to_numeric(df.get("pkg_size"), errors="coerce").fillna(1)
         df["product_weight"] = pd.to_numeric(df.get("Product_Weight"), errors="coerce").fillna(0)
@@ -226,17 +201,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
     # Cart → DataFrame
     df_calc = pd.DataFrame([item.model_dump() for item in req.cart])
-    
-    # ⭐ Debug: แสดงข้อมูลที่ได้รับจาก frontend
-    print("\n" + "="*80)
-    print("🔍 DEBUG: Cart items received from frontend")
-    print("="*80)
-    for idx, item in enumerate(req.cart):
-        if item.priceSource == "manual":
-            print(f"Item {idx}: SKU={item.sku}, priceSource=manual, UnitPrice={item.UnitPrice}")
-        if item.category == "G":
-            print(f"Item {idx}: SKU={item.sku}, isSoldByPack={item.isSoldByPack}, sqft_sheet={item.sqft_sheet}")
-    print("="*80 + "\n")
 
     df_calc["Pieces"] = pd.to_numeric(df_calc["qty"], errors="coerce").fillna(0)
 
@@ -252,11 +216,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     df_calc["_manual_pricePerKg"] = pd.to_numeric(df_calc.get("pricePerKg"), errors="coerce")
     df_calc["_manual_weight"] = pd.to_numeric(df_calc.get("weight"), errors="coerce")
     df_calc["_priceSource"] = df_calc.get("priceSource", "system")
-    
-    # ⭐ Debug log
-    print("\n=== DEBUG: DataFrame after processing ===")
-    print(df_calc[["sku", "isSoldByPack", "Pieces", "Sqft_Sheet", "_priceSource", "_manual_price"]])
-    print("=== END DEBUG ===\n")
 
 
     # Category from SKU
@@ -269,29 +228,24 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     df_calc["Quantity"] = np.where(
         df_calc["category"].astype(str).str.upper() == "G",
         np.where(
-            df_calc["isSoldByPack"],              # ⭐ ถ้าขายยกแพ็ก
-            df_calc["Pieces"],                    # ⭐ ไม่คูณ sqft
-            df_calc["Pieces"] * df_calc["Sqft_Sheet"]  # ⭐ ปกติคูณ sqft
+            df_calc["isSoldByPack"],              #ถ้าขายยกแพ็ก
+            df_calc["Pieces"],                    #ไม่คูณ sqft
+            df_calc["Pieces"] * df_calc["Sqft_Sheet"]  #ปกติคูณ sqft
         ),
         df_calc["Pieces"]                        # ✅ อื่น ๆ: ชิ้น/เส้น
     )
-    
-    # ⭐ Debug: แสดง Quantity ที่คำนวณได้
-    print("\n=== DEBUG: Quantity calculation ===")
-    print(df_calc[["sku", "category", "isSoldByPack", "Pieces", "Sqft_Sheet", "Quantity"]])
-    print("=== END DEBUG ===\n")
 
 
     # Attach customer data
     for k, v in req.customerData.items():
         df_calc[k] = v
     
-    # ⭐ ไม่ต้องเพิ่ม product_group แบบเดิมแล้ว
-    # จะใช้ category ของแต่ละสินค้าแทน
+
+
 
     df_calc["payment_terms"] = (
         req.customerData.get("payment_terms")
-        or req.customerData.get("paymentTerm")   # ⭐ ต้องเพิ่มบรรทัดนี้
+        or req.customerData.get("paymentTerm")   
         or req.customerData.get("creditTerm")
         or req.customerData.get("CreditTerm")
         or ""
@@ -307,7 +261,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     if df_items.empty:
         raise HTTPException(500, "ไม่สามารถโหลด Item_Master ตาม SKU ใน cart")
 
-    print("ITEMS COLUMNS =", df_items.columns.tolist())
     # Merge item data
     merge_cols = [
         "sku",
@@ -347,12 +300,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
 
 
-    print("\n=== AFTER MERGE UNIT CHECK ===")
-    print(df_calc[["sku", "unit"]].head(10).to_string(index=False))
-    print("=== END AFTER MERGE UNIT CHECK ===\n")
-
-
-
     # Normalize category
     if "category" not in df_calc.columns or df_calc["category"].isna().all():
         df_calc["category"] = df_calc["sku"].astype(str).str[0].str.upper()
@@ -373,12 +320,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     # DeliveryType
     df_calc["DeliveryType"] = "1" if req.deliveryType.upper() == "PICKUP" else "0"
 
-    # -----------------------------
     # MAP relevantSales FROM CUSTOMER DATA (ตาม category ของแต่ละสินค้า)
-    # -----------------------------
-    # ⭐ คำนวณ relevantSales ตาม category (อักษรตัวแรกของ SKU) ของแต่ละสินค้า
-    print(f"🔍 DEBUG: Calculating relevantSales per item based on category")
-    
     def get_relevant_sales_for_category(row):
         """คำนวณ relevantSales ตาม category ของสินค้า"""
         category = row.get('category', None)
@@ -389,8 +331,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         
         sales_key = f"sales_{category.lower()}_cust"
         sales_value = row.get(sales_key, 0)
-        
-        print(f"  SKU {row.get('sku', 'N/A')}: category={category} → {sales_key}={sales_value}")
         
         return sales_value
     
@@ -421,23 +361,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     # ✅ ถ้าเป็น Default Mode → บังคับให้ customer_code ว่าง
     # เพื่อให้เข้า block pricing R2 ด้านล่าง
     if IS_DEFAULT_MODE:
-        print("\n>>> DEFAULT PRICE MODE: NO CUSTOMER CODE → USE R2\n")
         customer_code = ""
 
-
-
-
     if not customer_code:
-        print("\n>>> DEFAULT PRICE MODE: NO CUSTOMER CODE → USE R2\n")
-
-        # ⭐ DEBUG: แสดงข้อมูล product_weight ก่อนคำนวณ
-        print("🔍 DEBUG: product_weight values before calculation:")
-        if "product_weight" in df_calc.columns:
-            for idx, row in df_calc.iterrows():
-                if str(row.get("category", "")).upper() == "A":
-                    print(f"  SKU {row['sku']}: product_weight = {row.get('product_weight', 'N/A')}")
-        else:
-            print("  ⚠️ product_weight column not found!")
         
         # Tier_Z = 0 means R2
         df_calc["_Tier_Z"] = 0
@@ -455,10 +381,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 weight = float(r.get("product_weight", 0) or 0)
                 new_price = float(r["NewPrice"])
                 raw = new_price * weight
-                
-                # ⭐ DEBUG: แสดงการคำนวณ
-                print(f"🔍 DEBUG [ALUMINIUM]: SKU={r['sku']}, NewPrice={new_price}, weight={weight}, UnitPrice={raw}")
-                
                 return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
             elif category == "G" and is_sold_by_pack:
                 # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง
@@ -497,8 +419,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         if req.needTaxInvoice:
             item_count = len(df_calc)
             tax_invoice_surcharge = calculate_tax_invoice_surcharge(item_count)
-            print(f"\n💰 [TAX INVOICE] Item count: {item_count}, Surcharge per item: {tax_invoice_surcharge} บาท")
-            print(f"💰 [TAX INVOICE] Total surcharge: {tax_invoice_surcharge * item_count} บาท\n")
             
             # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
             df_calc["UnitPrice"] = df_calc["UnitPrice"] + tax_invoice_surcharge
@@ -596,18 +516,13 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         }
 
 
-    # ⭐ HANDLE MANUAL PRICES (before normal pricing flow)
+    # HANDLE MANUAL PRICES (before normal pricing flow)
     # If user manually edited a price, use that instead of calculating
-    print("\n" + "="*80)
-    print("🔍 Checking for manually edited prices...")
-    print("="*80)
-    
     manual_price_items = []
     for idx, row in df_calc.iterrows():
         if row.get("priceSource") == "manual" and row.get("UnitPrice"):
             # ⭐ ถ้าเป็นโปรโมชั่น ไม่ต้องสร้าง special price request
             if row.get("isPromotion"):
-                print(f"🎁 [PROMOTION] Skipping special price request for {row['sku']} (marked as promotion)")
                 continue
             
             manual_price_items.append({
@@ -617,11 +532,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 "pricePerKg": row.get("pricePerKg"),
                 "weight": row.get("weight"),
             })
-            print(f"✅ Found manual price for {row['sku']}: {row.get('UnitPrice')} บาท")
-    
-    if manual_price_items:
-        print(f"📝 Total items with manual prices: {len(manual_price_items)}")
-    print("="*80 + "\n")
 
     # Store manual prices for later use
     df_calc["_manual_price"] = df_calc.apply(
@@ -649,16 +559,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     # NORMAL FLOW (มี customer code → คำนวณด้วย LevelPrice, Price)
     # =====================================================================
 
-    _safe_print_df(df_calc,
-                   ["sku", "name", "Quantity", "priceR2", "priceR1", "priceW2", "priceW1", "priceSDM", "category"],
-                   "AFTER MERGE ITEM DATA")
-    
-    # ⭐ ตรวจสอบว่าลูกค้าชื่อขึ้นต้นด้วย "ขายสด" → ใช้ R2 ตลอด
+    # ตรวจสอบว่าลูกค้าชื่อขึ้นต้นด้วย "ขายสด" → ใช้ R2 ตลอด
     customer_name = str(req.customerData.get("customerName", "")).strip()
     is_khaai_sod = customer_name.startswith("ขายสด")
-    
-    if is_khaai_sod:
-        print(f"\n>>> SPECIAL CUSTOMER: '{customer_name}' starts with 'ขายสด' → FORCE R2 PRICING\n")
 
     
     # Run LevelPrice
@@ -698,7 +601,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             elif c == "_ForceR2":
                 df_lp[c] = False
 
-    # 👉 ตอนนี้ df_lp schema ตรงกับที่ Price.py ต้องการแล้ว
+
     df_price = Price(df_lp)
     
     # ⭐ Preserve manual price columns from df_calc
@@ -725,16 +628,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
     df_price["UnitPrice_temp"] = df_price.apply(_compute_unit_price_temp, axis=1)
     
-    # ⭐ เพิ่ม: ตรวจสอบราคาโครงการก่อน (มีลำดับความสำคัญสูงสุด)
+    # ตรวจสอบราคาโครงการก่อน (มีลำดับความสำคัญสูงสุด)
     # ดึง project_id จาก customerData (ถ้ามี)
     project_id = req.customerData.get("project_id")
-    
-    print(f"\n{'='*80}")
-    if project_id:
-        print(f"🏗️ เริ่มตรวจสอบราคาโครงการ ID: {project_id}")
-    else:
-        print(f"ℹ️ ไม่ได้เลือกโครงการ → ข้ามการตรวจสอบราคาโครงการ")
-    print(f"{'='*80}")
     
     # Initialize price_source column
     df_price["price_source"] = "system"
@@ -792,11 +688,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                         project_price = price
                         price_type = "price"
                     
-                    print(f"\n🏗️ SKU: {sku}")
-                    print(f"   ✅ พบราคาโครงการ: {project_code} - {project_name}")
-                    print(f"   💰 ราคา: {project_price:.2f} บาท/{project_unit} ({price_type})")
-                    print(f"   📅 ระยะเวลา: {start_date} ถึง {end_date}")
-                    
                     # ใช้ราคาโครงการทันที (ไม่ต้องเปรียบเทียบ)
                     df_price.at[idx, "NewPrice"] = project_price
                     df_price.at[idx, "price_source"] = "project"
@@ -808,16 +699,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                     print(f"   ℹ️ ไม่พบในโครงการนี้ → ใช้ราคาระบบ/ประวัติ")
                     
             except Exception as e:
-                print(f"⚠️ ไม่สามารถตรวจสอบราคาโครงการสำหรับ SKU {sku}: {e}")
-    
-    print(f"{'='*80}")
-    print(f"✅ ตรวจสอบราคาโครงการเสร็จสิ้น")
-    print(f"{'='*80}\n")
+                pass
     
     # ⭐ เพิ่ม: ตรวจสอบประวัติราคาและใช้ราคาครั้งก่อนถ้าสูงกว่าราคาระบบ (เฉพาะที่ไม่มีราคาโครงการ)
-    print(f"\n{'='*80}")
-    print(f"🔍 เริ่มตรวจสอบประวัติราคาสำหรับลูกค้า: {customer_code}")
-    print(f"{'='*80}")
     
     for idx, row in df_price.iterrows():
         # ถ้ามีราคาโครงการแล้ว ข้ามไป
@@ -828,19 +712,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         category = str(row.get("category", "")).upper()
         system_price_base = float(row["NewPrice"])  # ราคาต่อหน่วยพื้นฐาน (กก./ตร.ฟุต/ชิ้น)
         system_price_display = float(row["UnitPrice_temp"])  # สำหรับแสดงผล
-        
-        # แสดงข้อมูลราคาระบบ
-        if category == "A":
-            product_weight = float(row.get("product_weight", 0) or 0)
-            print(f"\n📦 SKU: {sku} (อลูมิเนียม)")
-            print(f"   ราคาระบบ: {system_price_base:.2f} บาท/กก. (× {product_weight:.2f} กก./เส้น = {system_price_display:.2f} บาท/เส้น)")
-        elif category == "G":
-            sqft_sheet = float(row.get("Sqft_Sheet", 0) or 0)
-            print(f"\n📦 SKU: {sku} (กระจก)")
-            print(f"   ราคาระบบ: {system_price_base:.2f} บาท/ตร.ฟุต (× {sqft_sheet:.2f} ตร.ฟุต/แผ่น = {system_price_display:.2f} บาท/แผ่น)")
-        else:
-            print(f"\n📦 SKU: {sku} (หมวด {category})")
-            print(f"   ราคาระบบ: {system_price_base:.2f} บาท/ชิ้น")
         
         try:
             # ดึงราคาล่าสุดจาก Database โดยตรง
@@ -901,18 +772,15 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 
                 # ⭐ เปรียบเทียบราคาต่อหน่วยพื้นฐาน (กก./ตร.ฟุต/ชิ้น)
                 if last_price_base > system_price_base:
-                    print(f"   ✅ ใช้ราคาประวัติ {last_price_base:.2f} บาท (สูงกว่าราคาระบบ {system_price_base:.2f} บาท)")
                     df_price.at[idx, "NewPrice"] = last_price_base
                     df_price.at[idx, "price_source"] = "history"
                     df_price.at[idx, "last_purchase_date"] = last_date
                     df_price.at[idx, "last_purchase_qty"] = last_qty
                 else:
-                    print(f"   ℹ️ ใช้ราคาระบบ {system_price_base:.2f} บาท (ราคาประวัติ {last_price_base:.2f} บาท ต่ำกว่า)")
                     df_price.at[idx, "price_source"] = "system"
                     df_price.at[idx, "last_purchase_date"] = last_date
                     df_price.at[idx, "last_purchase_qty"] = last_qty
             else:
-                print(f"   ℹ️ ไม่พบประวัติการซื้อ → ใช้ราคาระบบ {system_price_base:.2f} บาท")
                 df_price.at[idx, "price_source"] = "system"
                 df_price.at[idx, "last_purchase_date"] = None
                 df_price.at[idx, "last_purchase_qty"] = None
@@ -928,21 +796,11 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     print(f"{'='*80}\n")
 
 
-    # ⭐ FIX UNIT (Normal Mode)
+    # FIX UNIT (Normal Mode)
     if "Base_Unit_of_Measure" in df_calc.columns:
         df_calc["unit"] = df_calc["Base_Unit_of_Measure"]
     else:
         df_calc["unit"] = ""
-
-
-
-    print("\n=== AFTER PRICE UNIT CHECK ===")
-    if "unit" in df_price.columns:
-        print(df_price[["sku", "unit"]].head(10).to_string(index=False))
-    else:
-        print("⚠️ unit column NOT FOUND in df_price")
-        print("columns =", list(df_price.columns))
-    print("=== END AFTER PRICE UNIT CHECK ===\n")
 
 
 
@@ -972,10 +830,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
     df_price["UnitPrice"] = df_price.apply(_compute_unit_price, axis=1)
 
-    # ⭐ OVERRIDE WITH SPECIAL PRICES (highest priority)
-    print("\n" + "="*80)
-    print("💰 Applying special price overrides...")
-    print("="*80)
+    # OVERRIDE WITH SPECIAL PRICES (highest priority)
     
     for idx, row in df_price.iterrows():
         sku = row["sku"]
@@ -983,20 +838,13 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         # ตรวจสอบราคาพิเศษก่อน
         if sku in special_prices_dict:
             special_price = special_prices_dict[sku]
-            print(f"✅ [SPECIAL PRICE] Overriding price for {sku}: {row['UnitPrice']:.2f} → {special_price:.2f} บาท")
             df_price.at[idx, "UnitPrice"] = special_price
             df_price.at[idx, "price_source"] = "special"
             df_price.at[idx, "NewPrice"] = special_price
             df_price.at[idx, "priceSource"] = "special"  # เพิ่ม flag สำหรับ frontend
             continue  # ข้ามการตรวจสอบ manual price
-    
-    print("="*80 + "\n")
 
-    # ⭐ OVERRIDE WITH MANUAL PRICES if provided (second priority)
-    print("\n" + "="*80)
-    print("🔍 Applying manual price overrides...")
-    print("="*80)
-    
+    # OVERRIDE WITH MANUAL PRICES if provided (second priority)
     for idx, row in df_price.iterrows():
         sku = row["sku"]
         
@@ -1007,14 +855,11 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         manual_price = row.get("_manual_price")
         
         if manual_price and manual_price > 0:
-            print(f"✅ Overriding price for {sku}: {row['UnitPrice']:.2f} → {manual_price:.2f} บาท")
             df_price.at[idx, "UnitPrice"] = manual_price
             df_price.at[idx, "price_source"] = "manual"
             df_price.at[idx, "NewPrice"] = manual_price  # Also update NewPrice for consistency
-    
-    print("="*80 + "\n")
 
-    # ⭐ คำนวณ _LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
+    # คำนวณ _LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
     def _compute_line_total(row):
         category = str(row.get("category", "")).upper()
         line_total = row["UnitPrice"] * row["Quantity"]
@@ -1026,15 +871,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     
     df_price["_LineTotal"] = df_price.apply(_compute_line_total, axis=1)
 
-    # ⭐ Debug: แสดง Quantity, UnitPrice, _LineTotal
-    print("\n=== DEBUG: LineTotal calculation ===")
-    print(df_price[["sku", "isSoldByPack", "Quantity", "UnitPrice", "_LineTotal"]])
-    print("=== END DEBUG ===\n")
-
-    _safe_print_df(df_price, ["sku", "NewPrice", "_LineTotal"], "AFTER PRICE CALC")
-
-    # Prepare return values
-
 
 # ยอดรวมสินค้า (ราคาขายรวม VAT แล้ว)
     subtotal_gross = float(df_price["_LineTotal"].sum())
@@ -1042,18 +878,16 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         req.customerData.get("shippingCustomerPay", 0) or 0
     )
 
-    # ⭐ คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
+    # คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
     tax_invoice_surcharge = 0.0
     if req.needTaxInvoice:
         item_count = len(df_price)
         tax_invoice_surcharge = calculate_tax_invoice_surcharge(item_count)
-        print(f"\n💰 [TAX INVOICE] Item count: {item_count}, Surcharge per item: {tax_invoice_surcharge} บาท")
-        print(f"💰 [TAX INVOICE] Total surcharge: {tax_invoice_surcharge * item_count} บาท\n")
         
         # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
         df_price["UnitPrice"] = df_price["UnitPrice"] + tax_invoice_surcharge
         
-        # ⭐ คำนวณ _LineTotal ใหม่ (ปัดเศษ ยกเว้นอลูมิเนียม)
+        # คำนวณ _LineTotal ใหม่ (ปัดเศษ ยกเว้นอลูมิเนียม)
         def _compute_line_total_with_tax(row):
             category = str(row.get("category", "")).upper()
             line_total = row["UnitPrice"] * row["Quantity"]
@@ -1066,14 +900,14 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         df_price["_LineTotal"] = df_price.apply(_compute_line_total_with_tax, axis=1)
         subtotal_gross = float(df_price["_LineTotal"].sum())
 
-    # 👉 รวมสินค้า + ค่าขนส่ง
+    # รวมสินค้า + ค่าขนส่ง
     gross_before_vat = subtotal_gross + shipping_customer_pay
 
-    # 👉 คิด VAT จากยอดรวม
+    # คิด VAT จากยอดรวม
     subtotal = float(round(gross_before_vat / (1 + get_vat_rate()), 2))
     vat = float(round(gross_before_vat - subtotal, 2))
 
-    # 👉 ยอดสุทธิ
+    # ยอดสุทธิ
     product_total = gross_before_vat
     total_final = product_total
 
@@ -1135,26 +969,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             "project_name": row.get("project_name", ""),  # ⭐ เพิ่ม project_name
             "project_valid_until": row.get("project_valid_until", ""),  # ⭐ เพิ่ม project_valid_until
         })
-
-    print(
-    "\n=== PRODUCT WEIGHT CHECK ===\n",
-    df_price[["sku", "product_weight"]].head().to_string(index=False)
-)
-
-    print("\n=== PRICING RESPONSE ITEMS (BACKEND) ===")
-    for r in results:
-        print(r["sku"], r.get("unit"))
-    print("=== END PRICING RESPONSE ITEMS ===\n")
-    
-    # ⭐ Debug: แสดง project_code ที่ส่งกลับ
-    project_items = [r for r in results if r.get("project_code")]
-    if project_items:
-        print("\n🏗️ [PRICING DEBUG] Items with project_code:")
-        for r in project_items:
-            print(f"  - SKU: {r['sku']}, Project Code: {r.get('project_code')}, Project Name: {r.get('project_name')}")
-    else:
-        print("\n⚠️ [PRICING DEBUG] No items with project_code found in response")
-    print()
 
     # FIX: Sanitize NaNs for JSON compliance
     def sanitize(val):

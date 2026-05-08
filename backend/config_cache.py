@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 _config_cache: Dict[str, Any] = {}
 
 
-def get_cached_config(key: str, default: Any = None) -> Any:
+def get_cached_config(key: str, default: Any = None) -> Any: #ดึงค่า Config แคช หรือ env 
     """
     Get configuration from cache.
     Falls back to environment variable if not in cache.
@@ -43,7 +43,7 @@ def get_cached_config(key: str, default: Any = None) -> Any:
     return default
 
 
-def set_cached_config(key: str, value: Any) -> None:
+def set_cached_config(key: str, value: Any) -> None: #เก็บค่า config ลงแคช เมื่อ Admin บันทึกการตั้งค่า
     """
     Set configuration in cache.
     
@@ -62,7 +62,7 @@ def clear_cache() -> None:
     logger.info("Config cache cleared")
 
 
-def get_page_access_config() -> Dict[str, Any]:
+def get_page_access_config() -> Dict[str, Any]: #ดึงสิทิ์กรเข้าถึงหน้าต่างๆ จากแคชหรือไฟล์ JSON เมื่อ User เข้าหน้า (ตรวจสอบสิทธิ์
     """
     Get page access configuration from cache or file.
     
@@ -135,7 +135,7 @@ def get_page_access_config() -> Dict[str, Any]:
     return default_config
 
 
-def set_page_access_config(config: Dict[str, Any]) -> None:
+def set_page_access_config(config: Dict[str, Any]) -> None: #บันทึกสิทธิ์หน้าต่างๆ ลงแคชและไฟล์ JSON เมื่อ Admin บันทึกการตั้งค่าสิทธิ์
     """
     Set page access configuration in cache and persist to file.
     
@@ -172,99 +172,3 @@ def set_page_access_config(config: Dict[str, Any]) -> None:
         # Still update cache even if file save fails
         logger.info(f"Page access config updated in cache for {len(config)} pages")
 
-
-def get_role_approval_scope() -> Dict[str, Any]:
-    """
-    Get role approval scope configuration from cache or file.
-    
-    Returns:
-        Dictionary of role approval scope configuration
-    """
-    # Check cache first
-    cached = get_cached_config("ROLE_APPROVAL_SCOPE")
-    
-    if cached:
-        try:
-            if isinstance(cached, str):
-                return json.loads(cached)
-            return cached
-        except:
-            logger.error("Failed to parse cached ROLE_APPROVAL_SCOPE")
-    
-    # Try to load from JSON file
-    try:
-        # Try multiple possible locations for the config file
-        possible_paths = [
-            os.path.join(os.path.dirname(__file__), "role_approval_scope.json"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_approval_scope.json"),
-            os.path.join(os.getcwd(), "role_approval_scope.json"),
-            os.path.join(os.getcwd(), "backend", "role_approval_scope.json"),
-            "role_approval_scope.json",
-        ]
-        
-        config_file = None
-        for path in possible_paths:
-            if os.path.exists(path):
-                config_file = path
-                break
-        
-        if config_file and os.path.exists(config_file):
-            with open(config_file, "r", encoding="utf-8") as f:
-                config = json.load(f)
-                # Cache it for future use
-                set_cached_config("ROLE_APPROVAL_SCOPE", config)
-                logger.info(f"✅ Loaded role approval scope from {config_file}")
-                return config
-        else:
-            logger.warning(f"⚠️ role_approval_scope.json not found in any of these locations: {possible_paths}")
-    except Exception as e:
-        logger.error(f"❌ Failed to load role approval scope from file: {e}")
-    
-    # Default configuration
-    default_config = {
-        "Sales": {"min_level": "R2", "max_level": "R2"},
-        "ZM": {"min_level": "R1", "max_level": "W2"},
-        "RM": {"min_level": "W2", "max_level": "W1"},
-        "SDM": {"min_level": "W1", "max_level": "SDM"},
-        "PM": {"min_level": "R2", "max_level": "SDM"},
-        "CEO": {"min_level": "R2", "max_level": "SDM"},
-    }
-    return default_config
-
-
-def set_role_approval_scope(config: Dict[str, Any]) -> None:
-    """
-    Set role approval scope configuration in cache and persist to file.
-    
-    Args:
-        config: Role approval scope configuration dictionary
-    """
-    # Update cache
-    set_cached_config("ROLE_APPROVAL_SCOPE", config)
-    
-    # Persist to JSON file
-    try:
-        # Try multiple possible locations for the config file
-        possible_paths = [
-            os.path.join(os.path.dirname(__file__), "role_approval_scope.json"),
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "role_approval_scope.json"),
-            os.path.join(os.getcwd(), "role_approval_scope.json"),
-            os.path.join(os.getcwd(), "backend", "role_approval_scope.json"),
-        ]
-        
-        config_file = None
-        for path in possible_paths:
-            if os.path.exists(path) or os.path.exists(os.path.dirname(path)):
-                config_file = path
-                break
-        
-        if not config_file:
-            config_file = possible_paths[0]  # Default to first path
-        
-        with open(config_file, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        logger.info(f"✅ Role approval scope updated and saved to {config_file} for {len(config)} roles")
-    except Exception as e:
-        logger.error(f"❌ Failed to save role approval scope to file: {e}")
-        # Still update cache even if file save fails
-        logger.info(f"Role approval scope updated in cache for {len(config)} roles")

@@ -21,40 +21,20 @@ def get_branch_code_from_numeric(numeric_code: str) -> str:
     - 6903 = branch identifier  
     - 002 = sub-branch
     
-    We'll create a mapping based on known patterns
+    Uses BRANCH_REGION_MAP to dynamically build the mapping
     """
     if not numeric_code or len(numeric_code) < 2:
         return 'XX'
     
-    # Hardcoded mapping based on known branch codes
-    # Format: numeric_prefix -> 2-letter code
-    numeric_to_letter = {
-        '00': 'TR',  # 00TR
-        '01': 'TJ',  # 01TJ
-        '03': 'TS',  # 03TS
-        '04': 'TP',  # 04TP
-        '05': 'AY',  # 05AY
-        '06': 'RY',  # 06RY
-        '07': 'RB',  # 07RB
-        '08': 'NR',  # 08NR
-        '09': 'UB',  # 09UB
-        '10': 'KK',  # 10KK
-        '11': 'PL',  # 11PL
-        '12': 'CM',  # 12CM
-        '13': 'SR',  # 13SR
-        '14': 'HY',  # 14HY
-        '15': 'CB',  # 15CB
-        '16': 'PK',  # 16PK
-        '17': 'CR',  # 17CR
-        '18': 'UD',  # 18UD
-        '19': 'PC',  # 19PC
-        '20': 'SK',  # 20SK
-        '21': 'BS',  # 21BS
-        '23': 'NS',  # 23NS
-        '24': 'TL',  # 24TL
-        '25': 'SB',  # 25SB
-        '90': 'HO',  # 90HO
-    }
+    # ⭐ Build mapping dynamically from BRANCH_REGION_MAP
+    # Extract numeric prefix (first 2 digits) from branch codes
+    numeric_to_letter = {}
+    for branch_code in BRANCH_REGION_MAP.keys():
+        # Extract numeric prefix from branch code (e.g., "00TR" -> "00", "12CM" -> "12")
+        if len(branch_code) >= 4:
+            numeric_prefix = branch_code[:2]
+            letter_suffix = branch_code[2:]
+            numeric_to_letter[numeric_prefix] = letter_suffix
     
     # Extract first 2 digits from numeric code
     prefix = numeric_code[:2]
@@ -587,7 +567,7 @@ async def update_project_status(
 
 @router.put("/{project_id}")
 async def update_project_price(project_id: int, project: ProjectPriceCreate, authorization: str = Header(None)):
-    """อัพเดทราคาโครงการ (Manager เท่านั้น)"""
+    """อัพเดทราคาโครงการ """
     current_user = get_current_user_from_token(authorization)
     conn = None
     
