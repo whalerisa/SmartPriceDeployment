@@ -494,6 +494,62 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         # ราคาต่อเส้น (Aluminium) / ราคาต่อหน่วย (อื่นๆ)
         df_calc["UnitPrice"] = df_calc.apply(lambda r: _compute_unit_price_helper(r, is_project_price=False), axis=1)
 
+        # ⭐ ตรวจสอบ manual price และสร้าง price_validations (DEFAULT MODE)
+        price_validations = []
+        for idx, row in df_calc.iterrows():
+            manual_price = row.get("_manual_price")
+            is_promotion = row.get("_isPromotion", False)
+            
+            if manual_price and manual_price > 0:
+                # ใช้ manual price
+                df_calc.at[idx, "UnitPrice"] = manual_price
+                df_calc.at[idx, "NewPrice"] = manual_price
+                
+                # ตรวจสอบว่าต้องขออนุมัติหรือไม่ (ยกเว้นโปรโมชั่น)
+                if not is_promotion:
+                    r1_price = float(row.get("priceR1", 0))
+                    w2_price = float(row.get("priceW2", 0))
+                    w1_price = float(row.get("priceW1", 0))
+                    sdm_price = float(row.get("priceSDM", 0))
+                    qty = float(row.get("Pieces", row.get("Quantity", 0)))
+                    unit = str(row.get("unit", ""))
+                    sku = row.get("sku", "")
+                    
+                    # ตรวจสอบว่าต้องขออนุมัติหรือไม่
+                    requires_approval = False
+                    approval_level = "OK"
+                    
+                    if r1_price > 0:  # มีข้อมูล threshold
+                        if sdm_price > 0 and manual_price < sdm_price:
+                            requires_approval = True
+                            approval_level = "PM_APPROVAL"
+                        elif w1_price > 0 and manual_price < w1_price:
+                            requires_approval = True
+                            approval_level = "SDM_APPROVAL"
+                        elif w2_price > 0 and manual_price < w2_price:
+                            requires_approval = True
+                            approval_level = "ZM_THEN_RM"
+                        elif manual_price < r1_price:
+                            requires_approval = True
+                            approval_level = "ZM_ONLY"
+                        
+                        if requires_approval:
+                            price_validations.append({
+                                "sku": sku,
+                                "name": row.get("name", ""),
+                                "qty": float(qty),
+                                "unit": unit,
+                                "category": str(row.get("category", "")).upper(),
+                                "requested_price": float(manual_price),
+                                "r1_price": float(r1_price),
+                                "w2_price": float(w2_price),
+                                "w1_price": float(w1_price),
+                                "sdm_price": float(sdm_price),
+                                "requires_approval": True,
+                                "approval_level": approval_level,
+                                "is_below_r1": manual_price < r1_price
+                            })
+
         # ⭐ คำนวณ LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
         df_calc["LineTotal"] = df_calc.apply(_compute_line_total_helper, axis=1)
         # ===== TOTAL CALC (MATCH NORMAL MODE) =====
@@ -531,6 +587,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 "profit": profit,
             },
             "customer_tier": "R2",
+            "price_validations": price_validations,  # ⭐ ส่งข้อมูล validation กลับไป
         }
 
 
@@ -826,6 +883,10 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     # ⭐ เพิ่ม: ตรวจสอบราคา manual และสร้าง price_validations
     price_validations = []
     
+    print(f"\n{'='*80}")
+    print(f"🔍 [VALIDATION] Checking manual prices for validation...")
+    print(f"{'='*80}")
+    
     for idx, row in df_price.iterrows():
         sku = row["sku"]
         
@@ -841,6 +902,10 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             df_price.at[idx, "price_source"] = "manual"
             df_price.at[idx, "NewPrice"] = manual_price  # Also update NewPrice for consistency
             
+            print(f"\n📦 SKU: {sku}")
+            print(f"   💰 Manual Price: {manual_price}")
+            print(f"   🎁 Is Promotion: {is_promotion}")
+            
             # ⭐ ตรวจสอบว่าต้องขออนุมัติหรือไม่ (ยกเว้นโปรโมชั่น)
             if not is_promotion:
                 r1_price = float(row.get("priceR1", 0))
@@ -850,23 +915,32 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 qty = float(row.get("Pieces", row.get("Quantity", 0)))
                 unit = str(row.get("unit", ""))
                 
+                print(f"   📊 Price Thresholds:")
+                print(f"      R1: {r1_price}")
+                print(f"      W2: {w2_price}")
+                print(f"      W1: {w1_price}")
+                print(f"      SDM: {sdm_price}")
+                
                 # ตรวจสอบว่าต้องขออนุมัติหรือไม่
                 requires_approval = False
                 approval_level = "OK"
                 
-                if r1_price > 0 and sdm_price > 0:  # มีข้อมูล threshold
-                    if manual_price < sdm_price:
+                if r1_price > 0:  # มีข้อมูล threshold (ไม่ต้องเช็ค sdm_price เพราะอาจเป็น 0)
+                    if sdm_price > 0 and manual_price < sdm_price:
                         requires_approval = True
                         approval_level = "PM_APPROVAL"
-                    elif manual_price < w1_price:
+                    elif w1_price > 0 and manual_price < w1_price:
                         requires_approval = True
                         approval_level = "SDM_APPROVAL"
-                    elif manual_price < w2_price:
+                    elif w2_price > 0 and manual_price < w2_price:
                         requires_approval = True
                         approval_level = "ZM_THEN_RM"
                     elif manual_price < r1_price:
                         requires_approval = True
                         approval_level = "ZM_ONLY"
+                    
+                    print(f"   ✅ Requires Approval: {requires_approval}")
+                    print(f"   📋 Approval Level: {approval_level}")
                     
                     if requires_approval:
                         price_validations.append({
@@ -884,6 +958,17 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                             "approval_level": approval_level,
                             "is_below_r1": manual_price < r1_price
                         })
+                        print(f"   ➕ Added to price_validations")
+                    else:
+                        print(f"   ⏭️  No approval needed - price is acceptable")
+                else:
+                    print(f"   ⚠️  No R1 price threshold found")
+            else:
+                print(f"   🎁 Promotion - no approval needed")
+    
+    print(f"\n{'='*80}")
+    print(f"✅ [VALIDATION] Total items requiring approval: {len(price_validations)}")
+    print(f"{'='*80}\n")
 
     # คำนวณ _LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
     df_price["_LineTotal"] = df_price.apply(_compute_line_total_helper, axis=1)

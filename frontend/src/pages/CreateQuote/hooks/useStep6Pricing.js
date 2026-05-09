@@ -19,9 +19,10 @@ export function useStep6Pricing(cart) {
   const cartItemsKey = useMemo(() => {
     if (!cart || cart.length === 0) return 'empty';
     
-    // สร้าง key จาก SKU + qty + needsPricing เท่านั้น
+    // สร้าง key จาก SKU + qty + needsPricing + priceSource + UnitPrice
+    // ⭐ เพิ่ม UnitPrice เพื่อให้ trigger เมื่อราคาเปลี่ยน
     return cart
-      .map(it => `${it.sku}:${it.qty}:${it.needsPricing ? '1' : '0'}:${it.priceSource || 'system'}`)
+      .map(it => `${it.sku}:${it.qty}:${it.needsPricing ? '1' : '0'}:${it.priceSource || 'system'}:${it.UnitPrice || 0}`)
       .sort()
       .join('|');
   }, [cart]);

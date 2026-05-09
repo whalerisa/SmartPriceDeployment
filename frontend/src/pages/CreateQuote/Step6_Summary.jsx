@@ -1068,16 +1068,22 @@ function Step6_Summary({ state, dispatch }) {
   useEffect(() => {
     console.log("🔄 [EFFECT] Calculation changed, updating price validations...");
     console.log("🔄 [EFFECT] calculation:", calculation);
+    console.log("🔄 [EFFECT] calculation.loading:", calculation.loading);
     console.log("🔄 [EFFECT] price_validations:", calculation.price_validations?.length || 0);
     console.log("🔄 [EFFECT] price_validations data:", calculation.price_validations);
 
     // ⭐ ใช้ price_validations จาก Backend แทน checkPricesBelowR1
-    const validations = calculation.price_validations || [];
-    setItemsBelowR1(validations.filter(v => v.is_below_r1));
-
-    console.log("🔄 [EFFECT] Items below R1:", validations.filter(v => v.is_below_r1).length);
-    console.log("🔄 [EFFECT] Items below R1 data:", validations.filter(v => v.is_below_r1));
-  }, [calculation.price_validations]);
+    // ⭐ ต้องรอให้ calculation เสร็จก่อน (loading = false)
+    if (!calculation.loading) {
+      const validations = calculation.price_validations || [];
+      const belowR1 = validations.filter(v => v.is_below_r1);
+      
+      console.log("🔄 [EFFECT] Setting itemsBelowR1:", belowR1.length);
+      console.log("🔄 [EFFECT] Items below R1 data:", belowR1);
+      
+      setItemsBelowR1(belowR1);
+    }
+  }, [calculation.loading, calculation.price_validations]);
 
   // แยกรายการที่สามารถขออนุมัติได้ (ทุกรายการสามารถขออนุมัติได้)
   const approvableItems = itemsBelowR1;
@@ -1151,7 +1157,7 @@ function Step6_Summary({ state, dispatch }) {
       // -------------------------------
       const isAluminium = (it.category || "").toUpperCase() === "A";
 
-      // ⭐ น้ำหนักสินค้า
+      // น้ำหนักสินค้า
       // - ถ้าเป็น manual และมีการแก้น้ำหนัก → ใช้น้ำหนักที่แก้
       // - ไม่งั้นใช้จาก pricing หรือค่าเดิม
       const productWeight =
@@ -1224,16 +1230,16 @@ function Step6_Summary({ state, dispatch }) {
         vat: effectiveTotals.vat,
         grandTotal: effectiveTotals.total,
         shippingCustomerPay: state.shippingCustomerPay ?? 0,
-        shippingRaw: state.shippingCost ?? 0, // ⭐ ค่าขนส่งที่ระบบคิด
+        shippingRaw: state.shippingCost ?? 0, // ค่าขนส่งที่ระบบคิด
       },
-      remark: state.remark || "", // ⭐ หมายเหตุทั่วไป → Remark
-      note: shippingReasonNote, // ⭐ เหตุผลการแก้ค่าขนส่ง → Remark_Shipping
-      pre_order: isPreOrder ? 1 : 0, // ⭐ เพิ่ม pre_order field
-      required_delivery_date: isPreOrder && requiredDeliveryDate ? requiredDeliveryDate : null, // ⭐ เพิ่ม required_delivery_date field
+      remark: state.remark || "", // หมายเหตุทั่วไป → Remark
+      note: shippingReasonNote, // เหตุผลการแก้ค่าขนส่ง → Remark_Shipping
+      pre_order: isPreOrder ? 1 : 0, // เพิ่ม pre_order field
+      required_delivery_date: isPreOrder && requiredDeliveryDate ? requiredDeliveryDate : null, // เพิ่ม required_delivery_date field
       project_code: selectedProject
         ? customerProjects.find((p) => p.project_id === selectedProject)?.project_code
-        : null, // ⭐ เพิ่ม project_code field
-      expireDate: state.expireDate || null, // ⭐ เพิ่ม expireDate field
+        : null, // เพิ่ม project_code field
+      expireDate: state.expireDate || null, // เพิ่ม expireDate field
     };
   };
 
@@ -1865,6 +1871,7 @@ function Step6_Summary({ state, dispatch }) {
       setItemModalOpen(true);
     }
   };
+  
 
   const handleItemPicked = (item, qty) => {
     if (!item) return;
