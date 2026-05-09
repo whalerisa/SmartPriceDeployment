@@ -70,6 +70,40 @@ def round_up_050(x: float) -> float:
     return math.ceil(x * 2) / 2
 
 
+def _compute_unit_price_helper(row, is_project_price=False):
+    """Helper function to compute unit price based on category"""
+    category = str(row.get("category", "")).upper()
+    is_sold_by_pack = bool(row.get("isSoldByPack", False))
+    
+    if category == "A":
+        # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
+        raw = float(row["NewPrice"]) * float(row.get("product_weight", 0) or 0)
+        return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
+    elif category == "G" and is_sold_by_pack:
+        # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง
+        raw = float(row["NewPrice"])
+    else:
+        # อื่นๆ: ใช้ NewPrice โดยตรง
+        raw = float(row["NewPrice"])
+    
+    # ราคาโครงการไม่ต้องปัดเศษ ใช้ราคาเป๊ะๆ
+    if is_project_price:
+        return raw  # ⭐ ใช้ราคาเป๊ะๆ ไม่ปัดเศษเลย
+    else:
+        return round_up_050(raw)  # ⭐ ราคาระบบ/ประวัติ ปัดทีละ 0.50
+
+
+def _compute_line_total_helper(row):
+    """Helper function to compute line total with rounding based on category"""
+    category = str(row.get("category", "")).upper()
+    line_total = row["UnitPrice"] * row["Quantity"]
+    
+    if category == "A":
+        return line_total  # อลูมิเนียมไม่ปัดเศษ
+    else:
+        return round_up_050(line_total)
+
+
 def calculate_tax_invoice_surcharge(item_count: int) -> float:
     """
     คำนวณค่าใบกำกับภาษี โดยแฝงเข้าไปในราคาต่อชิ้น
@@ -104,6 +138,135 @@ def get_vat_rate() -> float:
         return float(vat_rate_str)
     except (ValueError, TypeError):
         return 0.07
+
+
+def _normalize_customer_code(customer_data: Dict[str, Any]) -> str:
+    """Extract and normalize customer code from customer data"""
+    customer_code = str(
+        customer_data.get("customerCode")
+        or customer_data.get("code")
+        or customer_data.get("CustomerCode")
+        or ""
+    ).strip()
+    
+    customer_code_norm = customer_code.upper()
+    
+    IS_DEFAULT_MODE = (
+        customer_code_norm == ""
+        or customer_code_norm in ["N/A", "NA", "NONE", "NULL", "-"]
+    )
+    
+    # ✅ ถ้าเป็น Default Mode → บังคับให้ customer_code ว่าง
+    if IS_DEFAULT_MODE:
+        return ""
+    
+    return customer_code
+
+
+def _normalize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize common columns in dataframe"""
+    # Normalize cost
+    if "Cost" in df.columns and "cost" not in df.columns:
+        df["cost"] = pd.to_numeric(df["Cost"], errors="coerce").fillna(0)
+    else:
+        df["cost"] = pd.to_numeric(df.get("cost", 0), errors="coerce").fillna(0)
+    
+    # Normalize product_weight
+    df["product_weight"] = (
+        pd.to_numeric(df.get("product_weight_x"), errors="coerce")
+        .fillna(pd.to_numeric(df.get("product_weight_y"), errors="coerce"))
+        .fillna(0)
+    )
+    
+    # Normalize pkg_size
+    df["pkg_size"] = pd.to_numeric(df.get("pkg_size", 1), errors="coerce")
+    if "pkg_size_y" in df.columns:
+        master_pkg = pd.to_numeric(df["pkg_size_y"], errors="coerce")
+        df["pkg_size"] = df["pkg_size"].fillna(master_pkg)
+    df["pkg_size"] = df["pkg_size"].fillna(1)
+    df.loc[df["pkg_size"] <= 0, "pkg_size"] = 1
+    
+    return df
+
+
+def _calculate_totals(df: pd.DataFrame, shipping_customer_pay: float) -> Dict[str, float]:
+    """Calculate subtotal, VAT, and total from dataframe"""
+    # Support both LineTotal and _LineTotal column names
+    line_total_col = "LineTotal" if "LineTotal" in df.columns else "_LineTotal"
+    subtotal_gross = float(df[line_total_col].sum())
+    gross_before_vat = subtotal_gross + shipping_customer_pay
+    
+    subtotal = float(round(gross_before_vat / (1 + get_vat_rate()), 2))
+    vat = float(round(gross_before_vat - subtotal, 2))
+    
+    product_total = gross_before_vat
+    total_final = product_total
+    
+    return {
+        "subtotal": subtotal,
+        "vat": vat,
+        "product_total": product_total,
+        "total": total_final
+    }
+
+
+def _compute_profit(df: pd.DataFrame) -> float:
+    """Calculate profit from dataframe"""
+    if "cost" not in df.columns:
+        return 0
+    
+    df["cost"] = pd.to_numeric(df["cost"], errors="coerce").fillna(0)
+    
+    def _compute_profit_row(row):
+        if str(row.get("category", "")).upper() == "A":
+            unit_cost = float(row.get("cost", 0)) * float(row.get("product_weight", 0) or 0)
+            return (row["UnitPrice"] - unit_cost) * row["Quantity"]
+        return (row["NewPrice"] - float(row.get("cost", 0))) * row["Quantity"]
+    
+    return float(df.apply(_compute_profit_row, axis=1).sum())
+
+
+def _build_result_item(row) -> Dict[str, Any]:
+    """Build result item dictionary from dataframe row"""
+    is_glass = str(row.get("category", "")).upper() == "G"
+    is_sold_by_pack = bool(row.get("isSoldByPack", False))
+    
+    # สำหรับกระจก: 
+    # - ถ้าขายยกแพ็ก: ใช้ UnitPrice โดยตรง
+    # - ถ้าปกติ: คูณ sqft และปัดเศษ
+    price_per_sheet = (
+        row["UnitPrice"]
+        if is_glass and is_sold_by_pack
+        else round_up_050(row["UnitPrice"] * row.get("Sqft_Sheet", 0))
+        if is_glass
+        else row["UnitPrice"]
+    )
+    
+    return {
+        "sku": row["sku"],
+        "name": row.get("name"),
+        "qty": row.get("Pieces", row["Quantity"]),
+        "sqft_sheet": row.get("Sqft_Sheet", 0),
+        "unit": row.get("unit", ""),
+        "UnitPrice": row["UnitPrice"],
+        "price_per_sheet": price_per_sheet,
+        "_LineTotal": row.get("LineTotal", row.get("_LineTotal", 0)),
+        "_Tier_Z": row.get("_Tier_Z", 0),
+        "product_weight": float(row.get("product_weight", 0) or 0),
+        "price_source": row.get("price_source", "system"),
+        "last_purchase_date": row.get("last_purchase_date"),
+        "last_purchase_qty": row.get("last_purchase_qty"),
+        "priceR2": float(row.get("priceR2", 0) or 0),
+        "priceR1": float(row.get("priceR1", 0) or 0),
+        "priceW2": float(row.get("priceW2", 0) or 0),
+        "priceW1": float(row.get("priceW1", 0) or 0),
+        "priceSDM": float(row.get("priceSDM", 0) or 0),
+        "isSoldByPack": is_sold_by_pack,
+        "isPromotion": bool(row.get("_isPromotion", False)),
+        "project_code": row.get("project_code", ""),
+        "project_name": row.get("project_name", ""),
+        "project_valid_until": row.get("project_valid_until", ""),
+    }
 
 # -------------------------------
 #  MAIN ENDPOINT
@@ -273,47 +436,21 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     ]
     safe_merge_cols = [c for c in merge_cols if c in df_items.columns]
 
-
-    # ✅ Ensure pkg_size exists and usable (priority: FE > master > 1)
-    df_calc["pkg_size"] = pd.to_numeric(df_calc.get("pkg_size", 1), errors="coerce")
-
-    if "pkg_size_y" in df_calc.columns:
-        # ถ้า merge แล้วเกิดซ้ำชื่อ (มีทั้งจาก FE และ master)
-        master_pkg = pd.to_numeric(df_calc["pkg_size_y"], errors="coerce")
-        df_calc["pkg_size"] = df_calc["pkg_size"].fillna(master_pkg)
-
-    df_calc["pkg_size"] = df_calc["pkg_size"].fillna(1)
-    df_calc.loc[df_calc["pkg_size"] <= 0, "pkg_size"] = 1
-
-    
     df_calc = df_calc.merge(df_items[safe_merge_cols], on="sku", how="left")
+    
+    # Normalize columns after merge
+    df_calc = _normalize_dataframe_columns(df_calc)
+    
     if "Base Unit of Measure" in df_calc.columns:
         df_calc["unit"] = df_calc["Base Unit of Measure"]
     else:
         df_calc["unit"] = ""
-
-    # ✅ FIX: normalize cost column ให้เป็น cost (ตามที่โค้ดด้านล่างใช้)
-    if "Cost" in df_calc.columns and "cost" not in df_calc.columns:
-        df_calc["cost"] = pd.to_numeric(df_calc["Cost"], errors="coerce").fillna(0)
-    else:
-        df_calc["cost"] = pd.to_numeric(df_calc.get("cost", 0), errors="coerce").fillna(0)
 
 
 
     # Normalize category
     if "category" not in df_calc.columns or df_calc["category"].isna().all():
         df_calc["category"] = df_calc["sku"].astype(str).str[0].str.upper()
-
-
-    # Normal qty / Aluminium Weight
-    # ensure product_weight exists and is numeric
-    df_calc["product_weight"] = (
-        pd.to_numeric(df_calc.get("product_weight_x"), errors="coerce")
-        .fillna(pd.to_numeric(df_calc.get("product_weight_y"), errors="coerce"))
-        .fillna(0)
-    )
-    # ⭐ ไม่ตั้งค่าน้ำหนักเป็น 1 - ใช้น้ำหนักจริงจากฐานข้อมูล
-    # ถ้าไม่มีน้ำหนัก (= 0) ราคาจะเป็น 0 บาท
 
 
 
@@ -344,24 +481,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     # -------------------------------------------------------------
     # DEFAULT MODE NORMALIZATION
     # -------------------------------------------------------------
-    customer_code = str(
-        req.customerData.get("customerCode")
-        or req.customerData.get("code")
-        or req.customerData.get("CustomerCode")
-        or ""
-    ).strip()
-
-    customer_code_norm = customer_code.upper()
-
-    IS_DEFAULT_MODE = (
-        customer_code_norm == ""
-        or customer_code_norm in ["N/A", "NA", "NONE", "NULL", "-"]
-    )
-
-    # ✅ ถ้าเป็น Default Mode → บังคับให้ customer_code ว่าง
-    # เพื่อให้เข้า block pricing R2 ด้านล่าง
-    if IS_DEFAULT_MODE:
-        customer_code = ""
+    customer_code = _normalize_customer_code(req.customerData)
 
     if not customer_code:
         
@@ -372,50 +492,16 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         df_calc["NewPrice"] = pd.to_numeric(df_calc["priceR2"], errors="coerce").fillna(0)
 
         # ราคาต่อเส้น (Aluminium) / ราคาต่อหน่วย (อื่นๆ)
-        def _compute_unit_price_default(r):
-            category = str(r.get("category", "")).upper()
-            is_sold_by_pack = bool(r.get("isSoldByPack", False))
-            
-            if category == "A":
-                # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
-                weight = float(r.get("product_weight", 0) or 0)
-                new_price = float(r["NewPrice"])
-                raw = new_price * weight
-                return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
-            elif category == "G" and is_sold_by_pack:
-                # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง
-                raw = float(r["NewPrice"])
-            else:
-                # อื่นๆ: ใช้ NewPrice โดยตรง
-                raw = float(r["NewPrice"])
-            
-            return round_up_050(raw)  # ⭐ สินค้าอื่นๆปัดเศษ
-        
-        df_calc["UnitPrice"] = df_calc.apply(_compute_unit_price_default, axis=1)
+        df_calc["UnitPrice"] = df_calc.apply(lambda r: _compute_unit_price_helper(r, is_project_price=False), axis=1)
 
         # ⭐ คำนวณ LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
-        def _compute_line_total_default(row):
-            category = str(row.get("category", "")).upper()
-            line_total = row["UnitPrice"] * row["Quantity"]
-            
-            if category == "A":
-                return line_total  # อลูมิเนียมไม่ปัดเศษ
-            else:
-                return round_up_050(line_total)
-        
-        df_calc["LineTotal"] = df_calc.apply(_compute_line_total_default, axis=1)
+        df_calc["LineTotal"] = df_calc.apply(_compute_line_total_helper, axis=1)
         # ===== TOTAL CALC (MATCH NORMAL MODE) =====
-
-        subtotal_gross = float(df_calc["LineTotal"].sum())
-
         shipping_customer_pay = float(
             req.customerData.get("shippingCustomerPay", 0) or 0
         )
 
-        gross_before_vat = subtotal_gross + shipping_customer_pay
-
         # ⭐ คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
-        tax_invoice_surcharge = 0.0
         if req.needTaxInvoice:
             item_count = len(df_calc)
             tax_invoice_surcharge = calculate_tax_invoice_surcharge(item_count)
@@ -423,93 +509,25 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
             df_calc["UnitPrice"] = df_calc["UnitPrice"] + tax_invoice_surcharge
             
-            # ⭐ คำนวณ LineTotal ใหม่ (ปัดเศษ ยกเว้นอลูมิเนียม)
-            def _compute_line_total_with_tax(row):
-                category = str(row.get("category", "")).upper()
-                line_total = row["UnitPrice"] * row["Quantity"]
-                
-                if category == "A":
-                    return line_total  # อลูมิเนียมไม่ปัดเศษ
-                else:
-                    return round_up_050(line_total)
-            
-            df_calc["LineTotal"] = df_calc.apply(_compute_line_total_with_tax, axis=1)
-            subtotal_gross = float(df_calc["LineTotal"].sum())
-            gross_before_vat = subtotal_gross + shipping_customer_pay
+            # ⭐ คำนวณ LineTotal ใหม่
+            df_calc["LineTotal"] = df_calc.apply(_compute_line_total_helper, axis=1)
 
-        subtotal = float(round(gross_before_vat / (1 + get_vat_rate()), 2))
-        vat = float(round(gross_before_vat - subtotal, 2))
-
-        product_total = gross_before_vat
-        total_final = product_total
-
+        totals = _calculate_totals(df_calc, shipping_customer_pay)
 
         # -----------------------------
         # Profit (DEFAULT MODE)
         # -----------------------------
-        if "cost" in df_calc.columns:
-            df_calc["cost"] = pd.to_numeric(df_calc["cost"], errors="coerce").fillna(0)
-
-            def _compute_profit_default(row):
-                if str(row.get("category", "")).upper() == "A":
-                    unit_cost = float(row["cost"]) * float(row.get("product_weight", 0) or 0)
-                    return (row["UnitPrice"] - unit_cost) * row["Quantity"]
-                return (row["NewPrice"] - row["cost"]) * row["Quantity"]
-
-            profit = float(df_calc.apply(_compute_profit_default, axis=1).sum())
-        else:
-            profit = 0
+        profit = _compute_profit(df_calc)
 
 
 
-        results = []
-        for _, row in df_calc.iterrows():
-            is_glass = str(row.get("category", "")).upper() == "G"
-            is_sold_by_pack = bool(row.get("isSoldByPack", False))  # ⭐ เช็ค flag
-            
-            # ⭐ สำหรับกระจก:
-            # - ถ้าขายยกแพ็ก: ใช้ UnitPrice โดยตรง
-            # - ถ้าปกติ: คูณ sqft และปัดเศษ
-            price_per_sheet = (
-                row["UnitPrice"]  # ⭐ ขายยกแพ็ก
-                if is_glass and is_sold_by_pack
-                else round_up_050(row["UnitPrice"] * row.get("Sqft_Sheet", 0))
-                if is_glass
-                else row["UnitPrice"]
-            )
-            
-            results.append({
-                "sku": row["sku"],
-                "name": row.get("name"),
-                "qty": row.get("Pieces", row["Quantity"]),
-                "sqft_sheet": row.get("Sqft_Sheet", 0),
-                "unit": row.get("unit", ""),
-                "UnitPrice": row["UnitPrice"],
-                "price_per_sheet": price_per_sheet,
-                "_LineTotal": row["LineTotal"],
-                "_Tier_Z": 0,
-                "product_weight": float(row.get("product_weight", 0) or 0),
-                "priceR2": float(row.get("priceR2", 0) or 0),
-                "priceR1": float(row.get("priceR1", 0) or 0),
-                "priceW2": float(row.get("priceW2", 0) or 0),
-                "priceW1": float(row.get("priceW1", 0) or 0),
-                "priceSDM": float(row.get("priceSDM", 0) or 0),
-                "priceSource": row.get("price_source", "system"),
-                "isSoldByPack": is_sold_by_pack,  # ⭐ เพิ่ม flag
-                "project_code": row.get("project_code", ""),  # ⭐ เพิ่ม project_code
-                "project_name": row.get("project_name", ""),  # ⭐ เพิ่ม project_name
-                "project_valid_until": row.get("project_valid_until", ""),  # ⭐ เพิ่ม project_valid_until
-            })
-
+        results = [_build_result_item(row) for _, row in df_calc.iterrows()]
 
         return {
             "items": results,
             "totals": {
-                "subtotal": subtotal,
-                "vat": vat,
-                "product_total": product_total,
+                **totals,
                 "shippingCustomerPay": shipping_customer_pay,
-                "total": total_final,
                 "profit": profit,
             },
             "customer_tier": "R2",
@@ -615,18 +633,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         df_price["_manual_weight"] = df_calc["_manual_weight"].values
     
     # คำนวณ UnitPrice ก่อน (เพื่อใช้เปรียบเทียบกับราคาประวัติ)
-    def _compute_unit_price_temp(row):
-        category = str(row.get("category", "")).upper()
-        
-        if category == "A":
-            # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
-            raw = float(row["NewPrice"]) * float(row.get("product_weight", 0) or 0)
-            return raw  # ⭐ อลูมิเนียมไม่ปัดเศษ
-        else:
-            raw = float(row["NewPrice"])
-            return round_up_050(raw)  # ⭐ สินค้าอื่นๆปัดเศษ
-
-    df_price["UnitPrice_temp"] = df_price.apply(_compute_unit_price_temp, axis=1)
+    df_price["UnitPrice_temp"] = df_price.apply(lambda r: _compute_unit_price_helper(r, is_project_price=False), axis=1)
     
     # ตรวจสอบราคาโครงการก่อน (มีลำดับความสำคัญสูงสุด)
     # ดึง project_id จาก customerData (ถ้ามี)
@@ -795,40 +802,11 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     print(f"✅ ตรวจสอบประวัติราคาเสร็จสิ้น")
     print(f"{'='*80}\n")
 
-
-    # FIX UNIT (Normal Mode)
-    if "Base_Unit_of_Measure" in df_calc.columns:
-        df_calc["unit"] = df_calc["Base_Unit_of_Measure"]
-    else:
-        df_calc["unit"] = ""
-
-
-
-
-
-    def _compute_unit_price(row):
-        category = str(row.get("category", "")).upper()
-        is_project_price = row.get("price_source") == "project"
-        is_sold_by_pack = bool(row.get("isSoldByPack", False))  # ⭐ เช็ค flag
-        
-        if category == "A":
-            # อลูมิเนียม: คูณน้ำหนัก (ไม่ปัดเศษ)
-            raw = float(row["NewPrice"]) * float(row.get("product_weight", 0) or 0)
-            return raw  # ⭐ อลูมิเนียมไม่ปัดเศษเลย
-        elif category == "G" and is_sold_by_pack:
-            # ⭐ กระจกขายยกแพ็ก: ใช้ NewPrice โดยตรง (ไม่คูณ sqft)
-            raw = float(row["NewPrice"])
-        else:
-            # อื่นๆ (รวมกระจกปกติ): ใช้ NewPrice โดยตรง
-            raw = float(row["NewPrice"])
-        
-        # ราคาโครงการไม่ต้องปัดเศษ ใช้ราคาเป๊ะๆ
-        if is_project_price:
-            return raw  # ⭐ ใช้ราคาเป๊ะๆ ไม่ปัดเศษเลย
-        else:
-            return round_up_050(raw)  # ⭐ ราคาระบบ/ประวัติ ปัดทีละ 0.50
-
-    df_price["UnitPrice"] = df_price.apply(_compute_unit_price, axis=1)
+    # คำนวณ UnitPrice
+    df_price["UnitPrice"] = df_price.apply(
+        lambda r: _compute_unit_price_helper(r, is_project_price=(r.get("price_source") == "project")), 
+        axis=1
+    )
 
     # OVERRIDE WITH SPECIAL PRICES (highest priority)
     
@@ -845,6 +823,9 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             continue  # ข้ามการตรวจสอบ manual price
 
     # OVERRIDE WITH MANUAL PRICES if provided (second priority)
+    # ⭐ เพิ่ม: ตรวจสอบราคา manual และสร้าง price_validations
+    price_validations = []
+    
     for idx, row in df_price.iterrows():
         sku = row["sku"]
         
@@ -853,33 +834,66 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             continue
             
         manual_price = row.get("_manual_price")
+        is_promotion = row.get("_isPromotion", False)
         
         if manual_price and manual_price > 0:
             df_price.at[idx, "UnitPrice"] = manual_price
             df_price.at[idx, "price_source"] = "manual"
             df_price.at[idx, "NewPrice"] = manual_price  # Also update NewPrice for consistency
+            
+            # ⭐ ตรวจสอบว่าต้องขออนุมัติหรือไม่ (ยกเว้นโปรโมชั่น)
+            if not is_promotion:
+                r1_price = float(row.get("priceR1", 0))
+                w2_price = float(row.get("priceW2", 0))
+                w1_price = float(row.get("priceW1", 0))
+                sdm_price = float(row.get("priceSDM", 0))
+                qty = float(row.get("Pieces", row.get("Quantity", 0)))
+                unit = str(row.get("unit", ""))
+                
+                # ตรวจสอบว่าต้องขออนุมัติหรือไม่
+                requires_approval = False
+                approval_level = "OK"
+                
+                if r1_price > 0 and sdm_price > 0:  # มีข้อมูล threshold
+                    if manual_price < sdm_price:
+                        requires_approval = True
+                        approval_level = "PM_APPROVAL"
+                    elif manual_price < w1_price:
+                        requires_approval = True
+                        approval_level = "SDM_APPROVAL"
+                    elif manual_price < w2_price:
+                        requires_approval = True
+                        approval_level = "ZM_THEN_RM"
+                    elif manual_price < r1_price:
+                        requires_approval = True
+                        approval_level = "ZM_ONLY"
+                    
+                    if requires_approval:
+                        price_validations.append({
+                            "sku": sku,
+                            "name": row.get("name", ""),
+                            "qty": float(qty),
+                            "unit": unit,
+                            "category": str(row.get("category", "")).upper(),
+                            "requested_price": float(manual_price),
+                            "r1_price": float(r1_price),
+                            "w2_price": float(w2_price),
+                            "w1_price": float(w1_price),
+                            "sdm_price": float(sdm_price),
+                            "requires_approval": True,
+                            "approval_level": approval_level,
+                            "is_below_r1": manual_price < r1_price
+                        })
 
     # คำนวณ _LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
-    def _compute_line_total(row):
-        category = str(row.get("category", "")).upper()
-        line_total = row["UnitPrice"] * row["Quantity"]
-        
-        if category == "A":
-            return line_total  # อลูมิเนียมไม่ปัดเศษ
-        else:
-            return round_up_050(line_total)
-    
-    df_price["_LineTotal"] = df_price.apply(_compute_line_total, axis=1)
+    df_price["_LineTotal"] = df_price.apply(_compute_line_total_helper, axis=1)
 
-
-# ยอดรวมสินค้า (ราคาขายรวม VAT แล้ว)
-    subtotal_gross = float(df_price["_LineTotal"].sum())
+    # ยอดรวมสินค้า (ราคาขายรวม VAT แล้ว)
     shipping_customer_pay = float(
         req.customerData.get("shippingCustomerPay", 0) or 0
     )
 
     # คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
-    tax_invoice_surcharge = 0.0
     if req.needTaxInvoice:
         item_count = len(df_price)
         tax_invoice_surcharge = calculate_tax_invoice_surcharge(item_count)
@@ -887,93 +901,20 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
         df_price["UnitPrice"] = df_price["UnitPrice"] + tax_invoice_surcharge
         
-        # คำนวณ _LineTotal ใหม่ (ปัดเศษ ยกเว้นอลูมิเนียม)
-        def _compute_line_total_with_tax(row):
-            category = str(row.get("category", "")).upper()
-            line_total = row["UnitPrice"] * row["Quantity"]
-            
-            if category == "A":
-                return line_total  # อลูมิเนียมไม่ปัดเศษ
-            else:
-                return round_up_050(line_total)
-        
-        df_price["_LineTotal"] = df_price.apply(_compute_line_total_with_tax, axis=1)
-        subtotal_gross = float(df_price["_LineTotal"].sum())
+        # คำนวณ _LineTotal ใหม่
+        df_price["_LineTotal"] = df_price.apply(_compute_line_total_helper, axis=1)
 
-    # รวมสินค้า + ค่าขนส่ง
-    gross_before_vat = subtotal_gross + shipping_customer_pay
-
-    # คิด VAT จากยอดรวม
-    subtotal = float(round(gross_before_vat / (1 + get_vat_rate()), 2))
-    vat = float(round(gross_before_vat - subtotal, 2))
-
-    # ยอดสุทธิ
-    product_total = gross_before_vat
-    total_final = product_total
-
+    totals = _calculate_totals(df_price, shipping_customer_pay)
 
     # Profit
-    if "cost" in df_price.columns:
-        df_price["cost"] = pd.to_numeric(df_price["cost"], errors="coerce").fillna(0)
-        def _compute_profit(row):
-            if str(row.get("category", "")).upper() == "A":
-                unit_cost = float(row.get("cost", 0)) * float(row.get("product_weight", 0) or 0)
-                return (row["UnitPrice"] - unit_cost) * row["Quantity"]
-            return (row["NewPrice"] - float(row.get("cost", 0))) * row["Quantity"]
+    profit = _compute_profit(df_price)
 
-        profit = float(df_price.apply(_compute_profit, axis=1).sum())
-
-    else:
-        profit = 0
-
-    results = []
-    for _, row in df_price.iterrows():
-        
-        is_glass = str(row.get("category", "")).upper() == "G"
-        is_sold_by_pack = bool(row.get("isSoldByPack", False))  # ⭐ เช็ค flag
-
-        # สำหรับกระจก: 
-        # - ถ้าขายยกแพ็ก: ใช้ UnitPrice โดยตรง (ไม่คูณ sqft)
-        # - ถ้าปกติ: UnitPrice เป็นราคาต่อตารางฟุต ต้องคูณ sqft เพื่อได้ราคาต่อแผ่น และปัดเศษ
-        # สำหรับสินค้าอื่นๆ: ใช้ UnitPrice โดยตรง
-        price_per_sheet = (
-            row["UnitPrice"]  # ⭐ ขายยกแพ็ก: ใช้ราคาต่อหน่วยตรงๆ
-            if is_glass and is_sold_by_pack
-            else round_up_050(row["UnitPrice"] * row.get("Sqft_Sheet", 0))
-            if is_glass
-            else row["UnitPrice"]
-        )
-
-        results.append({
-            "sku": row["sku"],
-            "name": row.get("name"),
-            "qty": row.get("Pieces", row["Quantity"]),
-            "sqft_sheet": row.get("Sqft_Sheet", 0),
-            "unit": row.get("unit", ""),
-            "UnitPrice": row["UnitPrice"],
-            "price_per_sheet": price_per_sheet,
-            "_LineTotal": row["_LineTotal"],
-            "_Tier_Z": row["_Tier_Z"],
-            "product_weight": float(row.get("product_weight", 0) or 0),
-            "price_source": row.get("price_source", "system"),
-            "last_purchase_date": row.get("last_purchase_date"),
-            "last_purchase_qty": row.get("last_purchase_qty"),
-            "priceR2": float(row.get("priceR2", 0) or 0),
-            "priceR1": float(row.get("priceR1", 0) or 0),
-            "priceW2": float(row.get("priceW2", 0) or 0),
-            "priceW1": float(row.get("priceW1", 0) or 0),
-            "priceSDM": float(row.get("priceSDM", 0) or 0),
-            "isSoldByPack": bool(row.get("isSoldByPack", False)),  # ⭐ เพิ่ม flag
-            "isPromotion": bool(row.get("_isPromotion", False)),  # ⭐ เพิ่ม flag โปรโมชั่น
-            "project_code": row.get("project_code", ""),  # ⭐ เพิ่ม project_code
-            "project_name": row.get("project_name", ""),  # ⭐ เพิ่ม project_name
-            "project_valid_until": row.get("project_valid_until", ""),  # ⭐ เพิ่ม project_valid_until
-        })
+    results = [_build_result_item(row) for _, row in df_price.iterrows()]
 
     # FIX: Sanitize NaNs for JSON compliance
     def sanitize(val):
         if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
-            return 0.0 # or None
+            return 0.0
         return val
 
     sanitized_results = [
@@ -981,17 +922,13 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
         for item in results
     ]
 
-    sanitized_totals = {
-        "subtotal": sanitize(subtotal),
-        "vat": sanitize(vat),
-        "product_total": sanitize(product_total),
-        "shippingCustomerPay": sanitize(shipping_customer_pay),
-        "total": sanitize(total_final),
-        "profit": sanitize(profit),
-    }
+    sanitized_totals = {k: sanitize(v) for k, v in totals.items()}
+    sanitized_totals["shippingCustomerPay"] = sanitize(shipping_customer_pay)
+    sanitized_totals["profit"] = sanitize(profit)
 
     return {
         "items": sanitized_results,
         "totals": sanitized_totals,
         "customer_tier": results[0]["_Tier_Z"] if results else "N/A",
+        "price_validations": price_validations,  # ⭐ ส่งข้อมูล validation กลับไป
     }
