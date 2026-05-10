@@ -944,20 +944,12 @@ function Step6_Summary({ state, dispatch }) {
   }, [state.cart]);
 
   const handleQuickAdd = (item) => {
-    // สำหรับกระจก (category G) ไม่ต้องส่ง price
-    // ให้ pricing engine คำนวณจาก sqft_sheet แทน
+    //กระจกไม่ส่งprice ส่งแค่ตารางฟุต
+    //สินค้าอื่นส่งpriceและcost
     const isGlass = item.category === "G";
 
-    console.log("🔍 handleQuickAdd - item:", item);
-    console.log("🔍 isGlass:", isGlass);
-    console.log("🔍 sqft_sheet:", item.sqft_sheet);
-
-    //ดึงราคาจากหลายแหล่ง (prices.R2, priceR2, price)
     const price = item.prices?.R2 ?? item.priceR2 ?? item.price ?? 0;
     const cost = Number(item.cost || 0);
-
-    console.log("🔍 price resolved:", price);
-    console.log("🔍 cost resolved:", cost);
 
     const payload = {
       sku: item.sku,
@@ -977,8 +969,6 @@ function Step6_Summary({ state, dispatch }) {
       payload.price = price;
       payload.cost = cost;
     }
-
-    console.log("🔍 payload to dispatch:", payload);
 
     dispatch({
       type: "ADD_ITEM",
@@ -1871,7 +1861,7 @@ function Step6_Summary({ state, dispatch }) {
       setItemModalOpen(true);
     }
   };
-  
+
 
   const handleItemPicked = (item, qty) => {
     if (!item) return;
@@ -1924,9 +1914,6 @@ function Step6_Summary({ state, dispatch }) {
 
             {/* แสดงโปรโมชั่นของลูกค้า */}
             {(() => {
-              console.log("🔍 [STEP6] Checking customer for promotion banner:", state.customer);
-              console.log("🔍 [STEP6] Customer id:", state.customer?.id);
-              console.log("🔍 [STEP6] Customer code:", state.customer?.code);
               const custCode = state.customer?.id || state.customer?.code;
               return custCode ? (
                 <div className="mt-3">

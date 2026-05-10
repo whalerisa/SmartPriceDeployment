@@ -37,12 +37,6 @@ def _now_iso():
 def _calculate_expire_date(create_date: str = None) -> str:
     """
     คำนวณวันหมดอายุ (1 เดือนหลังจากวันที่สร้าง)
-    
-    Args:
-        create_date: วันที่สร้าง (ISO format) หรือ None เพื่อใช้วันที่ปัจจุบัน
-    
-    Returns:
-        วันหมดอายุในรูปแบบ ISO format
     """
     if create_date:
         base_date = datetime.fromisoformat(create_date)

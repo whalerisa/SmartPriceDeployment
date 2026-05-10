@@ -765,7 +765,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             except Exception as e:
                 pass
     
-    # ⭐ เพิ่ม: ตรวจสอบประวัติราคาและใช้ราคาครั้งก่อนถ้าสูงกว่าราคาระบบ (เฉพาะที่ไม่มีราคาโครงการ)
+    #ตรวจสอบประวัติราคาและใช้ราคาครั้งก่อนถ้าสูงกว่าราคาระบบ (เฉพาะที่ไม่มีราคาโครงการ)
     
     for idx, row in df_price.iterrows():
         # ถ้ามีราคาโครงการแล้ว ข้ามไป
@@ -880,7 +880,7 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             continue  # ข้ามการตรวจสอบ manual price
 
     # OVERRIDE WITH MANUAL PRICES if provided (second priority)
-    # ⭐ เพิ่ม: ตรวจสอบราคา manual และสร้าง price_validations
+    # ตรวจสอบราคา manual และสร้าง price_validations
     price_validations = []
     
     print(f"\n{'='*80}")
