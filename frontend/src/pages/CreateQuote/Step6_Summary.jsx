@@ -1225,7 +1225,7 @@ function Step6_Summary({ state, dispatch }) {
       remark: state.remark || "", // หมายเหตุทั่วไป → Remark
       note: shippingReasonNote, // เหตุผลการแก้ค่าขนส่ง → Remark_Shipping
       pre_order: isPreOrder ? 1 : 0, // เพิ่ม pre_order field
-      required_delivery_date: isPreOrder && requiredDeliveryDate ? requiredDeliveryDate : null, // เพิ่ม required_delivery_date field
+      required_delivery_date: requiredDeliveryDate || null, // ส่งวันที่เสมอ (required เฉพาะเมื่อ Pre-Order)
       project_code: selectedProject
         ? customerProjects.find((p) => p.project_id === selectedProject)?.project_code
         : null, // เพิ่ม project_code field
@@ -1462,6 +1462,12 @@ function Step6_Summary({ state, dispatch }) {
   };
 
   const handleSaveQuotation = async (status) => {
+    // ⭐ Validate: ถ้าเป็น Pre-Order ต้องระบุวันที่ลูกค้าต้องการของ
+    if (isPreOrder && !requiredDeliveryDate) {
+      alert("กรุณาระบุวันที่ลูกค้าต้องการของ เนื่องจากใบเสนอราคานี้เป็น Pre-Order");
+      return;
+    }
+
     try {
       setSaving(true);
 
@@ -1761,8 +1767,11 @@ function Step6_Summary({ state, dispatch }) {
         name: state.customer?.name || "ผู้ไม่ประสงค์ออกนาม",
         phone: state.customer?.phone || "",
       },
-      items: printSourceItems.map((it) => {
-        const original = state.cart.find((x) => printKeyOf(x) === printKeyOf(it));
+      items: printSourceItems.map((it, idx) => {
+        // ⭐ ใช้ index แทน .find() เพราะ items ที่มี SKU และ sqft_sheet เดียวกัน
+        //    จะทำให้ .find() คืนค่าตัวแรกเสมอ (ข้อมูลผิด)
+        //    printSourceItems กับ state.cart มีลำดับเดียวกัน จึงใช้ index ได้
+        const original = state.cart[idx] || state.cart.find((x) => printKeyOf(x) === printKeyOf(it));
         const unit =
           it.unit || // จาก pricing
           original?.unit || // จาก cart

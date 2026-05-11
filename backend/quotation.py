@@ -488,13 +488,21 @@ def list_quotations(
     conn = get_mssql_conn()
     cursor = conn.cursor()
 
-    # ⭐ ถ้าเป็น RM ให้ดึงทุกสาขาในภาค
+    # ถ้าเป็น RM ให้ดึงทุกสาขาในภาค 
     role = employee_info.get("role", "Sales")
-    region = employee_info.get("region", "BE")
+    region = employee_info.get("region", "BKK")
     
     if role == "RM":
         # RM เห็นทุกสาขาในภาค
         branches_in_region = get_all_branches_by_region(region)
+        
+        # ⭐ ถ้า RM อยู่ใน E ให้เพิ่ม BKK branches ด้วย (BKK และ E เป็นภูมิภาคเดียวกัน)
+        if region == "E":
+            branches_in_region.extend(get_all_branches_by_region("BKK"))
+        elif region == "BKK":
+            # ⭐ ถ้า RM อยู่ใน BKK ให้เพิ่ม E branches ด้วย
+            branches_in_region.extend(get_all_branches_by_region("E"))
+        
         logger.info(f"RM viewing quotes for region {region}: {branches_in_region}")
         
         # สร้าง placeholders สำหรับ SQL IN clause

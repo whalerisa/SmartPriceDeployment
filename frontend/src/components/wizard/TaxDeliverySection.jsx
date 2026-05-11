@@ -103,19 +103,25 @@ function TaxDeliverySection({
               </label>
             </div>
 
-            {/* Required Delivery Date - แสดงเสมอ */}
-            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+            {/* Required Delivery Date - แสดงเสมอ แต่ required เฉพาะเมื่อ isPreOrder */}
+            <div className={`p-3 rounded-lg border ${isPreOrder && !requiredDeliveryDate ? "bg-red-50 border-red-400" : "bg-blue-50 border-blue-200"}`}>
               <label htmlFor="requiredDeliveryDate" className="block text-xs font-semibold text-gray-700 mb-2">
                 วันที่ลูกค้าต้องการของ
+                {isPreOrder && <span className="text-red-500 ml-1">*</span>}
               </label>
               <input
                 type="date"
                 id="requiredDeliveryDate"
                 value={requiredDeliveryDate}
                 onChange={(e) => onRequiredDeliveryDateChange && onRequiredDeliveryDateChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${isPreOrder && !requiredDeliveryDate ? "border-red-400 bg-red-50" : "border-gray-300"}`}
                 min={new Date().toISOString().split("T")[0]}
               />
+              {isPreOrder && !requiredDeliveryDate && (
+                <p className="text-xs text-red-500 mt-2 font-semibold">
+                  ⚠️ กรุณาระบุวันที่ลูกค้าต้องการของ (บังคับสำหรับ Pre-Order)
+                </p>
+              )}
               {requiredDeliveryDate && (
                 <p className="text-xs text-blue-600 mt-2">
                   วันที่ที่เลือก: <strong>{formatDateThai(requiredDeliveryDate)}</strong>

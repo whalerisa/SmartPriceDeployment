@@ -181,25 +181,56 @@ def get_regions_for_rm(rm_branch: str) -> list:
 def get_regions_for_rm_by_employee_id(employee_id: str) -> list:
     """
     Get all regions that an RM is responsible for based on their employee ID.
+    Reads from employees.json file - RM สามารถมี multiple entries กับ region ต่างกัน
     
     Args:
         employee_id: RM's employee ID (e.g., "20054")
         
     Returns:
         List of region codes the RM is responsible for
+        Empty list if employee_id not found (will use default region from branch)
         
     Example:
         >>> get_regions_for_rm_by_employee_id("20054")
-        ['BKK', 'E']  # RM รหัส 20054 ดูแล BKK และ E
+        ['BKK', 'E']  # RM รหัส 20054 มี 2 entries ใน employees.json กับ region BKK และ E
+        
+        >>> get_regions_for_rm_by_employee_id("99999")
+        []  # ไม่พบ RM นี้ ให้ใช้ default region
     """
-    # ⭐ Mapping รหัสพนักงาน RM กับภาคที่ดูแล
-    # TODO: ควรเก็บข้อมูลนี้ใน database หรือ config file
-    rm_employee_regions = {
-        "20054": ["BKK", "E"],  # RM ดูแล Bangkok และ East
-        # เพิ่ม RM คนอื่นๆ ตามต้องการ
-    }
-    
-    return rm_employee_regions.get(employee_id, [])
+    try:
+        import json
+        from pathlib import Path
+        
+        # ⭐ ดึงข้อมูลจาก employees.json
+        employees_path = Path(__file__).parent / "employees.json"
+        
+        if not employees_path.exists():
+            logger.warning(f"employees.json not found at {employees_path}, using default region")
+            return []
+        
+        with open(employees_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        employees = data.get("employees", [])
+        
+        #ดึง regions ทั้งหมดของ RM นี้
+        regions = []
+        for emp in employees:
+            if emp.get("employee_id") == employee_id and emp.get("role") == "RM":
+                region = emp.get("region")
+                if region and region not in regions:
+                    regions.append(region)
+        
+        if regions:
+            logger.info(f"RM {employee_id} is responsible for regions: {regions}")
+            return regions
+        else:
+            logger.info(f"RM {employee_id} not found in employees.json, will use default region from branch")
+            return []
+            
+    except Exception as e:
+        logger.error(f"Error loading RM regions from employees.json: {e}")
+        return []
 
 
 def get_region_name(region_code: str) -> str:
