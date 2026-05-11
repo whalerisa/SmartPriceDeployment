@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth.js";
 import { useQuote } from "../hooks/useQuote.js";
-import GlassSemiSizeModal from "../components/wizard/GlassSemiSizeModal.jsx";
 import api from "../services/api";
 
 // --- คอมโพเนนต์หลัก ---
@@ -45,13 +44,6 @@ function Dashboard() {
 
   const handleTodayQuotes = () => {
     navigate("/confirmed-quotes");
-  };
-
-  const [isSemiModalOpen, setIsSemiModalOpen] = useState(false);
-
-  const handleSemiSize = () => {
-    dispatch({ type: "RESET_SemiSize" });
-    setIsSemiModalOpen(true);
   };
 
   const handleAdminConfig = () => {
@@ -341,12 +333,7 @@ function Dashboard() {
             </div>
           </div>
         </div>
-        {/* === Modal: Glass Semi Size === */}
-        <GlassSemiSizeModal
-          isOpen={isSemiModalOpen}
-          onClose={() => setIsSemiModalOpen(false)}
-          branchCode="B01"
-        />
+
       </main>
     </div>
   );

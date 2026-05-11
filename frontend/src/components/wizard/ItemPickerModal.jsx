@@ -191,10 +191,10 @@ function ItemPickerModal({ open, category, onClose, onConfirm }) {
 
 
   // ---------------- Filtered items ----------------
-  // ⭐ ไม่ต้อง filter ฝั่ง client แล้ว เพราะ backend filter ให้แล้ว
+  // ไม่ต้อง filter ฝั่ง client แล้ว เพราะ backend filter ให้แล้ว
   const filteredItems = items;
 
-  // ⭐ โหลด related items แยกจาก backend (เร็ว) + ส่ง filter ไปด้วย
+  //โหลด related items แยกจาก backend (เร็ว) + ส่ง filter ไปด้วย
   const loadRelatedItems = async (item) => {
     if (!item?.product_group) {
       setRelatedItems([]);

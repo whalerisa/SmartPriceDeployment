@@ -1267,7 +1267,7 @@ function Step6_Summary({ state, dispatch }) {
           url = "/api/items/categories/E/list";
           break;
         case "G":
-          url = "/api/glass/list";
+          url = "/api/items/glass/list";
           break;
         case "Y":
           url = "/api/items/categories/Y/list";

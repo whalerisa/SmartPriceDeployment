@@ -318,7 +318,7 @@ const ProjectPriceManagement = () => {
 
           try {
             const url = categoryCode === 'G' 
-              ? '/api/glass/filter-options'
+              ? '/api/items/glass/filter-options'
               : `/api/items/categories/${categoryCode}/filter-options`;
             
             // ⭐ Build filter params - ส่งทุกค่าที่เลือก (ไม่ใช่แค่ค่าแรก)
@@ -1029,7 +1029,7 @@ const ProjectPriceManagement = () => {
                 };
 
                 // ดึง options พื้นฐาน (ไม่มี filter)
-                const baseResponse = await api.get('/api/glass/filter-options');
+                const baseResponse = await api.get('/api/items/glass/filter-options');
                 const baseData = baseResponse.data;
 
                 if (baseData.brands) {
@@ -1063,7 +1063,7 @@ const ProjectPriceManagement = () => {
                 // ⭐ ดึง SubGroup แยกตาม Group
                 for (const groupCode of glassGroupCodes) {
                   try {
-                    const subGroupResponse = await api.get('/api/glass/filter-options', {
+                    const subGroupResponse = await api.get('/api/items/glass/filter-options', {
                       params: { type: groupCode }
                     });
                     if (subGroupResponse.data.subGroups) {
@@ -1287,7 +1287,9 @@ const ProjectPriceManagement = () => {
           <Plus className="w-5 h-5" />
           เพิ่มรหัสโครงการ
         </button>
+      
       </div>
+      <div className='font-semibold text-red-600 mb-2 text-xl'>รายละเอียดต้องถูกอนุมัติมาจาก "ใบขอราคาพิเศษ" แล้วเท่านั้น</div>
 
       {/* Error Message */}
       {error && (

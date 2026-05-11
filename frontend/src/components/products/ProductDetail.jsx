@@ -24,7 +24,7 @@ export default function ProductDetail({ item }) {
         const isGlass = sku && sku[0] === 'G';
         
         // ใช้ endpoint ที่เหมาะสม
-        const endpoint = isGlass ? `/api/glass/${sku}` : `/api/items/${sku}`;
+        const endpoint = isGlass ? `/api/items/glass/${sku}` : `/api/items/${sku}`;
         const res = await api.get(endpoint);
         setDetail(res.data);
       } catch (err) {

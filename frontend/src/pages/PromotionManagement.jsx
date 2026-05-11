@@ -24,7 +24,7 @@ const createDefaultForm = () => ({
   branches: ['ALL'],
   start_date: '',
   end_date: '',
-  selection_type: 'items', // items | filter (removed customer)
+  selection_type: 'items', 
   promotion_text: '',
   items: [],
   filter_criteria: {
@@ -35,7 +35,7 @@ const createDefaultForm = () => ({
     colors: [],
     thicknesses: []
   },
-  customer_types: [] // ⭐ ประเภทลูกค้าที่ใช้โปรโมชั่นได้ (R, W, I, P) - ใช้กับทั้ง items และ filter
+  customer_types: [] // ประเภทลูกค้าที่ใช้โปรโมชั่นได้ (R, W, I, P) - ใช้กับทั้ง items และ filter
 });
 
 const CUSTOMER_TYPE_OPTIONS = [
@@ -189,7 +189,7 @@ const PromotionManagement = ({ standalone = false }) => {
           try {
             // Glass ใช้ API แยก
             const url = categoryCode === 'G' 
-              ? '/api/glass/filter-options'
+              ? '/api/items/glass/filter-options'
               : `/api/items/categories/${categoryCode}/filter-options`;
             
             console.log(`📡 [LOAD FILTER] Fetching: ${url}`);

@@ -112,7 +112,7 @@ def list_invoice(
     posting_date: Optional[str] = Query(None),
     limit: int = 200,
     return_line_items: bool = Query(False),
-    project_only: bool = Query(False),  # ⭐ เพิ่มพารามิเตอร์กรองเฉพาะ Invoice ที่มี Project_No
+    project_only: bool = Query(False),  
 ):
     """
     ดึงรายการ Invoice จาก MSSQL Database

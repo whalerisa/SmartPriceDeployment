@@ -19,7 +19,7 @@ export default function GlassFilter({ onFilterChange }) {
 
   const fetchOptions = async () => {
     try {
-      const res = await api.get("/api/glass/filter-options", {
+      const res = await api.get("/api/items/glass/filter-options", {
         params: { brand, type, subGroup, color, thickness },
       });
       setOptions({

@@ -150,7 +150,7 @@ export default function GlassPickerModal({ open, onClose, onConfirm }) {
 
       console.log('🔍 Glass search params:', params);
 
-      const res = await api.get("/api/glass/list", { params });
+      const res = await api.get("/api/items/glass/list", { params });
       
       const newItems = res.data.items || [];
       const totalCount = res.data.total || 0;
@@ -169,7 +169,7 @@ export default function GlassPickerModal({ open, onClose, onConfirm }) {
         const newStockData = {};
         for (const item of newItems) {
           try {
-            const stockRes = await api.get(`/api/glass/${item.sku}/stock`);
+            const stockRes = await api.get(`/api/items/glass/${item.sku}/stock`);
             newStockData[item.sku] = stockRes.data.quantity || 0;
           } catch (err) {
             console.error(`Error fetching stock for ${item.sku}:`, err);
@@ -292,7 +292,7 @@ export default function GlassPickerModal({ open, onClose, onConfirm }) {
         if (colorFilter) params.color = colorFilter;
         if (thickFilter) params.thickness = thickFilter;
 
-        const res = await api.get("/api/glass/filter-options", { params });
+        const res = await api.get("/api/items/glass/filter-options", { params });
         setFilterOptions(res.data);
       } catch (err) {
         console.error("Error loading filter options:", err);
@@ -351,7 +351,7 @@ export default function GlassPickerModal({ open, onClose, onConfirm }) {
     };
 
     try {
-      const res = await api.post("/api/glass/calc", payload);
+      const res = await api.post("/api/items/glass/calc", payload);
 
       setCalcResult({
         ...res.data,
