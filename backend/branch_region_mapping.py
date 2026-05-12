@@ -167,7 +167,7 @@ def get_regions_for_rm(rm_branch: str) -> list:
     # ⭐ หา region ของ branch นี้ก่อน
     branch_region = get_region_from_branch(rm_branch)
     
-    # ⭐ ถ้า branch อยู่ใน BKK หรือ E ให้ดูแลทั้ง 2 ภาค
+    #ถ้า branch อยู่ใน BKK หรือ E ให้ดูแลทั้ง 2 ภาค
     if branch_region in ["BKK", "E"]:
         return ["BKK", "E"]
     

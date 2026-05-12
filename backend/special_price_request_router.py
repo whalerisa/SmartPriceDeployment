@@ -5,10 +5,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from auth_dependency import get_employee_info
 from employee_position_mapper import (
-    find_zm_at_branch, find_rm_in_region, find_sdm,
     find_pm_by_category, find_all_pms_by_categories
 )
-from branch_region_mapping import get_region_from_branch, get_regions_for_rm, get_regions_for_rm_by_employee_id
 from config.db_mssql import get_mssql_conn
 import logging
 import os
@@ -331,30 +329,37 @@ async def get_pending_approvals(employee_info: dict = Depends(get_employee_info)
         
         # Query based on role
         if current_role == 'ZM':
-            # ZM ดูคำขอที่ status = PENDING_ZM และ approver_employee_id = ZM_{branch}
-            # เช่น ZM ที่สาขา 03TS จะเห็นคำขอที่ approver_employee_id = "ZM_03TS"
-            position_id = f"ZM_{current_branch}"
-            logger.info(f"  Looking for requests with approver_employee_id = {position_id} and status = PENDING_ZM")
+            # ZM ดูคำขอที่ status = PENDING_ZM
+            # รองรับ ZM ที่ดูแลหลายสาขา โดยใช้ branches array จาก token
+            zm_branches = employee_info.get('branches', [current_branch])
+            if not zm_branches:
+                zm_branches = [current_branch]
             
-            cursor.execute("""
+            position_ids = [f"ZM_{b}" for b in zm_branches if b]
+            placeholders = ','.join(['?' for _ in position_ids])
+            
+            logger.info(f"  ZM branches from token: {zm_branches}")
+            logger.info(f"  Looking for requests with approver_employee_id IN {position_ids} and status = PENDING_ZM")
+            
+            cursor.execute(f"""
                 SELECT * FROM special_price_requests
                 WHERE status = 'PENDING_ZM'
-                AND approver_employee_id = ?
+                AND approver_employee_id IN ({placeholders})
                 ORDER BY created_at DESC
-            """, (position_id,))
+            """, position_ids)
             
         elif current_role == 'RM':
-            # ⭐ RM ดูคำขอที่ status = PENDING_RM จากทุกภูมิภาคที่ดูแล
-            rm_branch = employee_info.get('branch_code')
-            rm_regions = get_regions_for_rm(rm_branch)
+            # RM ดูคำขอที่ status = PENDING_RM
+            # ใช้ branches array จาก token แปลงเป็น position_ids ทั้งหมดที่ดูแล
+            rm_branches = employee_info.get('branches', [current_branch])
+            if not rm_branches:
+                rm_branches = [current_branch]
             
-            logger.info(f"  RM branch: {rm_branch}")
-            logger.info(f"  RM responsible regions: {rm_regions}")
-            logger.info(f"  Looking for requests with status = PENDING_RM from regions: {rm_regions}")
-            
-            # ⭐ สร้าง position_ids สำหรับทุกภูมิภาคที่ RM ดูแล
-            position_ids = [f"RM_{region}" for region in rm_regions]
+            position_ids = [f"RM_{b}" for b in rm_branches if b]
             placeholders = ','.join(['?' for _ in position_ids])
+            
+            logger.info(f"  RM branches from token: {rm_branches}")
+            logger.info(f"  Looking for requests with approver_employee_id IN {position_ids} and status = PENDING_RM")
             
             cursor.execute(f"""
                 SELECT * FROM special_price_requests
@@ -486,9 +491,6 @@ async def create_special_price_request(
         if not branch_code:
             raise HTTPException(status_code=400, detail="Branch code not found in token")
         
-        # 2. คำนวณ region จาก branch
-        region = get_region_from_branch(branch_code)
-        
         logger.info(f"Creating special price request:")
         logger.info(f"  Requester: {requester_id} ({requester_name})")
         logger.info(f"  Branch: {branch_code}, Region: {region}")
@@ -502,83 +504,6 @@ async def create_special_price_request(
         
         logger.info(f"  Requested Total: {requested_total}")
         logger.info(f"  Below SDM Threshold: {below_sdm}")
-        
-        # 4. หาผู้อนุมัติโดยใช้ employee_position_mapper
-        logger.info("Finding approvers...")
-        
-        zm = await find_zm_at_branch(branch_code)
-        logger.info(f"  ZM: {zm}")
-        
-        rm = await find_rm_in_region(region)
-        logger.info(f"  RM: {rm}")
-        
-        # หา PM ถ้าราคา < SDM
-        pm_approver = None
-        product_categories = None
-        if below_sdm:
-            product_categories = extract_product_categories(request_data.items)
-            logger.info(f"  Product Categories: {product_categories}")
-            
-            if product_categories:
-                pms = await find_all_pms_by_categories(list(product_categories))
-                if pms:
-                    # ใช้ PM ตัวแรก (ถ้ามีหลายหมวดหมู่)
-                    pm_approver = list(pms.values())[0]
-                    logger.info(f"  PM Approver: {pm_approver}")
-                else:
-                    logger.warning(f"  ⚠️ PM not found for categories: {product_categories}")
-                    logger.warning(f"  ⚠️ Request will be created but PM routing may fail during approval")
-            else:
-                logger.warning(f"  ⚠️ No product categories found in items")
-        else:
-            sdm = await find_sdm()
-            logger.info(f"  SDM: {sdm}")
-        
-        # 5. สร้าง request object (ยังไม่บันทึกลงฐานข้อมูล - ต้องสร้างตารางก่อน)
-        special_price_request = {
-            "quote_no": request_data.quote_no,
-            "requester_id": requester_id,
-            "requester_name": requester_name,
-            "requester_role": role,
-            "branch": branch_code,
-            "region": region,
-            
-            # ข้อมูลลูกค้า
-            "customer_code": request_data.customer_code,
-            "customer_name": request_data.customer_name,
-            "customer_type": request_data.customer_type,
-            
-            # ข้อมูลสินค้า
-            "items": [item.dict() for item in request_data.items],
-            "total_items": len(request_data.items),
-            
-            # เหตุผลและวันที่
-            "request_reason": request_data.request_reason,
-            "valid_from": request_data.valid_from,
-            "valid_to": request_data.valid_to,
-            
-            # ผู้อนุมัติ (เก็บ employee_id จริง)
-            "zm_approver_id": zm['employee_id'] if zm else None,
-            "zm_approver_name": zm['name'] if zm else None,
-            "zm_approver_branch": zm['branch'] if zm else None,
-            
-            "rm_approver_id": rm['employee_id'] if rm else None,
-            "rm_approver_name": rm['name'] if rm else None,
-            "rm_approver_region": rm.get('region') if rm else None,
-            
-            # PM approver (ถ้าราคา < SDM)
-            "pm_approver_id": pm_approver['employee_id'] if pm_approver else None,
-            "pm_approver_name": pm_approver['name'] if pm_approver else None,
-            "pm_category": pm_approver['category'] if pm_approver else None,
-            
-            # SDM approver (ถ้าราคา >= SDM)
-            "sdm_approver_id": None,  # จะกำหนดในภายหลัง
-            "sdm_approver_name": None,
-            
-            # สถานะ
-            "status": "pending_zm",  # เริ่มที่ ZM เสมอ
-            "created_at": datetime.now().isoformat(),
-        }
         
         logger.info("Saving special price request to database...")
         
@@ -594,16 +519,6 @@ async def create_special_price_request(
         # เริ่มที่ ZM เสมอ (ไม่ว่าจะต้องผ่านใครบ้าง)
         initial_status = 'PENDING_ZM'
         approver_id = f"ZM_{branch_code}"
-        
-        # ⭐ Log PM info for debugging (ไม่บันทึกลง database ตอนสร้าง)
-        # PM routing จะใช้ approver_employee_id = 'PM_{category}' เหมือนระดับอื่น
-        if pm_approver:
-            logger.info(f"  📝 PM Routing Info (will be used when SDM approves):")
-            logger.info(f"     PM Category: {pm_approver['category']}")
-            logger.info(f"     PM Name: {pm_approver['name']}")
-            logger.info(f"     PM Employee ID: {pm_approver['employee_id']}")
-            logger.info(f"     PM Branch: 90HO (all PMs)")
-            logger.info(f"     Will route to: PM_{pm_approver['category']}")
         
         # Insert special_price_requests (ใช้คอลัมน์เดิมเหมือนระดับอื่น)
         cursor.execute("""
@@ -742,37 +657,45 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
         
         # 2. ตรวจสอบสิทธิ์
         if current_role == 'ZM':
-            # ZM ต้องเช็คว่าเป็น ZM ของสาขานี้
-            expected_position = f"ZM_{current_branch}"
-            if current_status != 'PENDING_ZM' and current_status != 'SDM_APPROVAL':
+            # ZM รองรับหลายสาขา — ใช้ branches array จาก token
+            zm_branches = employee_info.get('branches', [current_branch])
+            if not zm_branches:
+                zm_branches = [current_branch]
+            
+            valid_positions = [f"ZM_{b}" for b in zm_branches if b]
+            
+            logger.info(f"  ZM branches from token: {zm_branches}")
+            logger.info(f"  Valid ZM positions: {valid_positions}")
+            
+            if current_status not in ['PENDING_ZM', 'SDM_APPROVAL']:
                 raise HTTPException(status_code=403, detail="This request is not pending ZM approval")
-            if approver_employee_id != expected_position:
-                raise HTTPException(status_code=403, detail=f"You are not the assigned approver (expected {approver_employee_id})")
+            if approver_employee_id not in valid_positions:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"You are not the assigned approver (request assigned to {approver_employee_id}, your positions: {valid_positions})"
+                )
         
         elif current_role == 'RM':
             if current_status != 'PENDING_RM':
                 raise HTTPException(status_code=403, detail="This request is not pending RM approval")
             
-            # ⭐ RM ต้องเช็คว่าคำขอมาจากสาขาในภูมิภาคที่ RM ดูแล
-            # ดึง region ของคำขอจาก approver_employee_id (เช่น "RM_BKK" หรือ "RM_E")
             if not approver_employee_id or not approver_employee_id.startswith('RM_'):
                 raise HTTPException(status_code=400, detail="Invalid approver employee ID for RM")
             
-            request_region = approver_employee_id.split('_')[1]  # "RM_BKK" → "BKK"
-            rm_branch = employee_info.get('branch_code')  # Branch ของ RM ที่ login
+            request_branch = approver_employee_id.split('_')[1]  # "RM_03TS" → "03TS"
             
-            # ⭐ ดึงภูมิภาคทั้งหมดที่ RM คนนี้ดูแล (รองรับ RM ดูแลหลายภาค)
-            rm_regions = get_regions_for_rm(rm_branch)
+            # RM รองรับหลายสาขา — ใช้ branches array จาก token
+            rm_branches = employee_info.get('branches', [current_branch])
+            if not rm_branches:
+                rm_branches = [current_branch]
             
-            logger.info(f"  Request region: {request_region}")
-            logger.info(f"  RM branch: {rm_branch}")
-            logger.info(f"  RM responsible regions: {rm_regions}")
+            logger.info(f"  Request branch: {request_branch}")
+            logger.info(f"  RM branches from token: {rm_branches}")
             
-            # ⭐ เช็คว่า request_region อยู่ในภูมิภาคที่ RM ดูแลหรือไม่
-            if request_region not in rm_regions:
+            if request_branch not in rm_branches:
                 raise HTTPException(
-                    status_code=403, 
-                    detail=f"You are RM responsible for regions {rm_regions}, but this request is from region {request_region}"
+                    status_code=403,
+                    detail=f"You are RM responsible for branches {rm_branches}, but this request is from branch {request_branch}"
                 )
         
         elif current_role == 'SDM':
@@ -827,12 +750,10 @@ async def approve_request(request_id: int, employee_info: dict = Depends(get_emp
             if needs_rm or needs_sdm or needs_pm:
                 # ส่งต่อ RM (ทุกกรณีที่ไม่ใช่ ZM_ONLY)
                 new_status = 'PENDING_RM'
-                # คำนวณ region จาก branch ของคำขอ
+                # ใช้ branch ของคำขอโดยตรง (ไม่ต้องแปลง region)
                 request_branch = request.get('branch')
-                from branch_region_mapping import get_region_from_branch
-                region = get_region_from_branch(request_branch) if request_branch else employee_info.get('region')
-                new_approver_id = f"RM_{region}"
-                logger.info(f"  → Forwarding to RM: {new_approver_id} (Branch: {request_branch}, Region: {region})")
+                new_approver_id = f"RM_{request_branch}"
+                logger.info(f"  → Forwarding to RM: {new_approver_id} (Branch: {request_branch})")
             else:
                 # อนุมัติเลย (ZM_ONLY)
                 new_status = 'APPROVED'
@@ -982,36 +903,45 @@ async def reject_request(request_id: int, rejection_data: RejectionRequest, empl
         
         # 2. ตรวจสอบสิทธิ์ (ต้องเป็นผู้อนุมัติที่ได้รับมอบหมาย)
         if current_role == 'ZM':
-            # ZM ต้องเช็คว่าเป็น ZM ของสาขานี้
-            expected_position = f"ZM_{current_branch}"
+            # ZM รองรับหลายสาขา — ใช้ branches array จาก token
+            zm_branches = employee_info.get('branches', [current_branch])
+            if not zm_branches:
+                zm_branches = [current_branch]
+            
+            valid_positions = [f"ZM_{b}" for b in zm_branches if b]
+            
+            logger.info(f"  ZM branches from token: {zm_branches}")
+            logger.info(f"  Valid ZM positions: {valid_positions}")
+            
             if current_status not in ['PENDING_ZM', 'SDM_APPROVAL']:
                 raise HTTPException(status_code=403, detail="This request is not pending ZM approval")
-            if approver_employee_id != expected_position:
-                raise HTTPException(status_code=403, detail=f"You are not the assigned approver (expected {approver_employee_id})")
+            if approver_employee_id not in valid_positions:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"You are not the assigned approver (request assigned to {approver_employee_id}, your positions: {valid_positions})"
+                )
         
         elif current_role == 'RM':
             if current_status != 'PENDING_RM':
                 raise HTTPException(status_code=403, detail="This request is not pending RM approval")
             
-            # ⭐ RM ต้องเช็คว่าคำขอมาจากสาขาในภูมิภาคที่ RM ดูแล
             if not approver_employee_id or not approver_employee_id.startswith('RM_'):
                 raise HTTPException(status_code=400, detail="Invalid approver employee ID for RM")
             
-            request_region = approver_employee_id.split('_')[1]  # "RM_BKK" → "BKK"
-            rm_branch = employee_info.get('branch_code')  # Branch ของ RM ที่ login
+            request_branch = approver_employee_id.split('_')[1]  # "RM_03TS" → "03TS"
             
-            # ⭐ ดึงภูมิภาคทั้งหมดที่ RM คนนี้ดูแล (รองรับ RM ดูแลหลายภาค)
-            rm_regions = get_regions_for_rm(rm_branch)
+            # RM รองรับหลายสาขา — ใช้ branches array จาก token
+            rm_branches = employee_info.get('branches', [current_branch])
+            if not rm_branches:
+                rm_branches = [current_branch]
             
-            logger.info(f"  Request region: {request_region}")
-            logger.info(f"  RM branch: {rm_branch}")
-            logger.info(f"  RM responsible regions: {rm_regions}")
+            logger.info(f"  Request branch: {request_branch}")
+            logger.info(f"  RM branches from token: {rm_branches}")
             
-            # ⭐ เช็คว่า request_region อยู่ในภูมิภาคที่ RM ดูแลหรือไม่
-            if request_region not in rm_regions:
+            if request_branch not in rm_branches:
                 raise HTTPException(
-                    status_code=403, 
-                    detail=f"You are RM responsible for regions {rm_regions}, but this request is from region {request_region}"
+                    status_code=403,
+                    detail=f"You are RM responsible for branches {rm_branches}, but this request is from branch {request_branch}"
                 )
         
         elif current_role == 'SDM':

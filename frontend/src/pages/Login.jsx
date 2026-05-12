@@ -9,7 +9,8 @@ function Login() {
   const [formData, setFormData] = useState({
     employeeCode: "",
     role: "",
-    branchId: "",
+    branchId: "",       // primary branch (สาขาแรกที่เลือก)
+    selectedBranches: [], // สาขาทั้งหมดที่เลือก (multi)
     password: "",
     branches: [],
     selectedBranch: "",
@@ -62,14 +63,27 @@ function Login() {
     setLoading(true);
 
     // Validate
-    if (!formData.employeeCode || !formData.role || !formData.branchId || !formData.password) {
+    if (!formData.employeeCode || !formData.role || !formData.password) {
       setError("กรุณากรอกข้อมูลให้ครบถ้วน");
       setLoading(false);
       return;
     }
 
+    if (formData.selectedBranches.length === 0) {
+      setError("กรุณาเลือกสาขาอย่างน้อย 1 สาขา");
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await api.post("/api/login/manual", formData);
+      const primaryBranch = formData.selectedBranches[0];
+      const response = await api.post("/api/login/manual", {
+        employeeCode: formData.employeeCode,
+        role: formData.role,
+        branchId: primaryBranch,
+        branches: formData.selectedBranches,
+        password: formData.password,
+      });
       console.log("Manual login success:", response.data);
 
       // Reload หน้าเพื่อให้ AuthContext อ่าน cookie ใหม่
@@ -79,6 +93,17 @@ function Login() {
       setError(err.response?.data?.detail || "ไม่สามารถเข้าสู่ระบบได้");
       setLoading(false);
     }
+  };
+
+  // toggle สาขาใน selectedBranches
+  const handleBranchToggle = (branchCode) => {
+    setFormData((prev) => {
+      const already = prev.selectedBranches.includes(branchCode);
+      const updated = already
+        ? prev.selectedBranches.filter((b) => b !== branchCode)
+        : [...prev.selectedBranches, branchCode];
+      return { ...prev, selectedBranches: updated };
+    });
   };
 
   const handleSelectBranch = async (e) => {
@@ -298,24 +323,56 @@ function Login() {
             </div>
 
             <div>
-              <label htmlFor="branchId" className="block text-sm font-medium text-gray-700 mb-2">
-                สาขา
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                สาขาที่ดูแล{" "}
+                <span className="text-gray-400 font-normal">(เลือกได้หลายสาขา — สาขาแรกที่เลือกคือ Primary)</span>
               </label>
-              <select
-                id="branchId"
-                name="branchId"
-                value={formData.branchId}
-                onChange={handleInputChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                disabled={loading}
-              >
-                <option value="">เลือกสาขา</option>
-                {branches.map((branch) => (
-                  <option key={branch.code} value={branch.code}>
-                    {branch.displayName}
-                  </option>
-                ))}
-              </select>
+
+              {/* แสดง primary badge */}
+              {formData.selectedBranches.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {formData.selectedBranches.map((b, i) => (
+                    <span
+                      key={b}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        i === 0
+                          ? "bg-blue-100 text-blue-700 border border-blue-300"
+                          : "bg-gray-100 text-gray-600 border border-gray-200"
+                      }`}
+                    >
+                      {i === 0 && <span className="text-blue-500">★</span>}
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="border border-gray-300 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
+                {branches.map((branch) => {
+                  const checked = formData.selectedBranches.includes(branch.code);
+                  const isPrimary = formData.selectedBranches[0] === branch.code;
+                  return (
+                    <label
+                      key={branch.code}
+                      className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                        checked ? "bg-blue-50" : "hover:bg-gray-50"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleBranchToggle(branch.code)}
+                        disabled={loading}
+                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-800 flex-1">{branch.displayName}</span>
+                      {isPrimary && (
+                        <span className="text-xs text-blue-600 font-medium">Primary</span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <button

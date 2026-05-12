@@ -1,6 +1,7 @@
 # login.py — ใช้ Employee API
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
+from typing import List
 from datetime import datetime, timedelta, timezone
 import jwt, os, httpx
 
@@ -25,6 +26,7 @@ class ManualLoginRequest(BaseModel):
     employeeCode: str
     role: str
     branchId: str
+    branches: List[str] = []  # สาขาทั้งหมดที่ดูแล (optional, ถ้าไม่ส่งมาจะใช้ branchId เดียว)
     password: str
 
 
@@ -486,9 +488,14 @@ async def manual_login(req: ManualLoginRequest, response: Response):
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS),
     }
     
-    # ⭐ เพิ่ม branches ลงใน token (ถ้ามี)
-    if emp.get("branches"):
-        token_payload["branches"] = emp["branches"]
+    # ⭐ เพิ่ม branches ลงใน token
+    # ถ้า frontend ส่ง branches มาให้ใช้ค่านั้น ไม่งั้นใช้ branchId เดียว
+    manual_branches = req.branches if req.branches else [req.branchId]
+    # ตรวจสอบว่า branchId (primary) อยู่ใน branches เสมอ
+    if req.branchId not in manual_branches:
+        manual_branches = [req.branchId] + manual_branches
+    token_payload["branches"] = manual_branches
+    print(f"   ✅ Manual login branches: {manual_branches}")
     
     # สร้าง JWT token
     token = jwt.encode(
