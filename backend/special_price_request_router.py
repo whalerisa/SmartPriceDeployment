@@ -493,7 +493,7 @@ async def create_special_price_request(
         
         logger.info(f"Creating special price request:")
         logger.info(f"  Requester: {requester_id} ({requester_name})")
-        logger.info(f"  Branch: {branch_code}, Region: {region}")
+        logger.info(f"  Branch: {branch_code}")
         logger.info(f"  Quote No: {request_data.quote_no}")
         logger.info(f"  Customer: {request_data.customer_code} - {request_data.customer_name}")
         logger.info(f"  Items: {len(request_data.items)}")
