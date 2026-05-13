@@ -8,13 +8,11 @@ import { QuoteProvider } from "./context/QuoteContext.jsx";
 import "./style.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <QuoteProvider>
-          <App />
-        </QuoteProvider>
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>
+  <BrowserRouter>
+    <AuthProvider>
+      <QuoteProvider>
+        <App />
+      </QuoteProvider>
+    </AuthProvider>
+  </BrowserRouter>
 );

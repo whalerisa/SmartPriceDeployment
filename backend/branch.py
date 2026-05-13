@@ -1,8 +1,3 @@
-"""
-Branch Router
-
-This module provides API endpoints for branch data from MSSQL.
-"""
 
 from fastapi import APIRouter, HTTPException
 from config.db_mssql import get_mssql_conn

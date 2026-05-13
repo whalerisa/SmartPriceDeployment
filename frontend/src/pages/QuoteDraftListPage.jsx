@@ -12,6 +12,8 @@ export default function QuoteDraftListPage() {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12; // แสดง 12 การ์ดต่อหน้า (3 คอลัมน์ × 4 แถว)
 
   useEffect(() => {
     const fetchDrafts = async () => {
@@ -76,6 +78,44 @@ export default function QuoteDraftListPage() {
 
     return byText && bySales;
   });
+
+  // ⭐ คำนวณ pagination
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedDrafts = filtered.slice(startIndex, endIndex);
+
+  // ⭐ ฟังก์ชันเปลี่ยนหน้า
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // ⭐ รีเซ็ตไปหน้าแรกเมื่อค้นหา
+  const handleSearch = (value) => {
+    setSearchText(value);
+    setCurrentPage(1);
+  };
+
+  const handleSalesFilter = (value) => {
+    setSalesFilter(value);
+    setCurrentPage(1);
+  };
+
   const { dispatch } = useQuote();
   const handleEditDraft = async (q) => {
     const res = await api.get(`/api/quotation/${encodeURIComponent(q.quoteNo)}`);
@@ -174,7 +214,7 @@ export default function QuoteDraftListPage() {
               <input
                 type="text"
                 value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 placeholder="ค้นหาด้วย รหัสลูกค้า, ชื่อ หรือ เลขที่ใบเสนอราคา"
                 className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
@@ -186,7 +226,7 @@ export default function QuoteDraftListPage() {
               <input
                 type="text"
                 value={salesFilter}
-                onChange={(e) => setSalesFilter(e.target.value)}
+                onChange={(e) => handleSalesFilter(e.target.value)}
                 placeholder="ทั้งหมด"
                 className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
               />
@@ -201,18 +241,27 @@ export default function QuoteDraftListPage() {
               </button>
             </div>
           </div>
+
+          {/* ข้อมูลสรุป */}
+          {!loading && filtered.length > 0 && (
+            <div className="mt-3 text-sm text-gray-600">
+              แสดง <span className="font-bold">{startIndex + 1}</span> ถึง{" "}
+              <span className="font-bold">{Math.min(endIndex, filtered.length)}</span> จาก{" "}
+              <span className="font-bold">{filtered.length}</span> รายการ
+            </div>
+          )}
         </div>
 
         {/* Grid cards */}
         {loading && <p className="text-sm text-gray-500">กำลังโหลดข้อมูล...</p>}
         {error && <p className="text-sm text-red-500 mb-2">{error}</p>}
 
-        <div className="grid gap-4 grid-cols-3  ">
-          {!loading && filtered.length === 0 && (
+        <div className="grid gap-4 grid-cols-3">
+          {!loading && paginatedDrafts.length === 0 && (
             <p className="text-sm text-gray-500 col-span-full">ยังไม่มีใบเสนอราคาแบบร่าง</p>
           )}
 
-          {filtered.map((q) => {
+          {paginatedDrafts.map((q) => {
             const totalAmount =
               q.totals?.grandTotal ??
               q.cart?.reduce((sum, it) => sum + Number(it.lineTotal || 0), 0);
@@ -245,6 +294,52 @@ export default function QuoteDraftListPage() {
             );
           })}
         </div>
+
+        {/* ⭐ Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-between bg-white rounded-xl shadow-md p-4">
+            <button
+              onClick={handlePreviousPage}
+              disabled={currentPage === 1}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                currentPage === 1
+                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              ← ก่อนหน้า
+            </button>
+
+            {/* Page Numbers */}
+            <div className="flex gap-2">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => handlePageChange(page)}
+                  className={`px-3 py-2 rounded-lg font-medium transition-colors ${
+                    currentPage === page
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={handleNextPage}
+              disabled={currentPage === totalPages}
+              className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                currentPage === totalPages
+                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  : "bg-blue-600 text-white hover:bg-blue-700"
+              }`}
+            >
+              ถัดไป →
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

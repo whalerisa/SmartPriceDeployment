@@ -464,6 +464,58 @@ def update_quotation(quote_no: str, payload: dict = Body(...)):
 
 
 # -----------------------------------------------------
+# DASHBOARD STATS - ดึงแค่ตัวเลข ไม่ดึงข้อมูลทั้งหมด
+# -----------------------------------------------------
+@router.get("/dashboard-stats", summary="ดึงสถิติ Dashboard (ตัวเลขเท่านั้น)")
+def get_dashboard_stats(
+    branch_code: str = Depends(get_branch_code),
+    employee_info: dict = Depends(get_employee_info)
+):
+    """
+    ดึงสถิติสำหรับ Dashboard ด้วย COUNT query เดียว
+    ไม่ดึงข้อมูลทั้งหมด 
+    """
+    conn = get_mssql_conn()
+    cursor = conn.cursor()
+
+    role = employee_info.get("role", "Sales")
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # สร้าง branch filter
+    if role == "RM":
+        branches_in_token = employee_info.get("branches", [branch_code]) or [branch_code]
+        placeholders = ",".join(["?" for _ in branches_in_token])
+        branch_filter = f"(BranchCode IN ({placeholders}) OR IBT_branch IN ({placeholders}))"
+        branch_params = branches_in_token + branches_in_token
+    else:
+        branch_filter = "(BranchCode = ? OR IBT_branch = ?)"
+        branch_params = [branch_code, branch_code]
+
+    # ⭐ Query เดียวดึงทุกตัวเลขพร้อมกัน
+    sql = f"""
+        SELECT
+            -- ใบเสนอราคาวันนี้ (complete + วันนี้)
+            SUM(CASE WHEN Status = 'complete' AND CAST(CreateDate AS DATE) = ? THEN 1 ELSE 0 END) AS today_count,
+            -- ลูกค้าที่ติดต่อวันนี้ (นับ CustomerCode ไม่ซ้ำ)
+            COUNT(DISTINCT CASE WHEN Status = 'complete' AND CAST(CreateDate AS DATE) = ? THEN CustomerCode END) AS contact_customer_count,
+            -- รอดำเนินการ (open + pending_approval + draft)
+            SUM(CASE WHEN Status IN ('open', 'pending_approval', 'draft') THEN 1 ELSE 0 END) AS pending_count
+        FROM Quote_Header
+        WHERE {branch_filter}
+    """
+    params = [today, today] + branch_params
+    cursor.execute(sql, params)
+    row = cursor.fetchone()
+    conn.close()
+
+    return {
+        "today_count": int(row[0] or 0),
+        "contact_customer_count": int(row[1] or 0),
+        "pending_count": int(row[2] or 0),
+    }
+
+
+# -----------------------------------------------------
 # LIST / HISTORY
 # -----------------------------------------------------
 @router.get("", summary="โหลดรายการใบเสนอราคาแบบทั้งหมด")
@@ -476,37 +528,29 @@ def list_quotations(
     โหลดรายการใบเสนอราคา กรองตามสาขาของพนักงาน
     รวมถึงใบเสนอราคา IBT ที่ส่งไปยังสาขานี้
     
-    สำหรับ RM (ผู้จัดการภาค): จะเห็นข้อมูลทุกสาขาในภาคของตนเอง
+    สำหรับ RM (ผู้จัดการภาค): จะเห็นข้อมูลทุกสาขาที่ติดมาใน token
     
     Args:
         status: กรองตาม status (draft, complete, cancelled)
         branch_code: รหัสสาขาจาก JWT token
-        employee_info: ข้อมูลพนักงานจาก JWT token (role, region)
+        employee_info: ข้อมูลพนักงานจาก JWT token (role, branches)
     """
-    from branch_region_mapping import get_all_branches_by_region
-    
     conn = get_mssql_conn()
     cursor = conn.cursor()
 
-    # ถ้าเป็น RM ให้ดึงทุกสาขาในภาค 
+    # ถ้าเป็น RM ให้ดึงทุกสาขาที่ติดมาใน token
     role = employee_info.get("role", "Sales")
-    region = employee_info.get("region", "BKK")
     
     if role == "RM":
-        # RM เห็นทุกสาขาในภาค
-        branches_in_region = get_all_branches_by_region(region)
+        # RM เห็นทุกสาขาที่อยู่ใน branches array ของ token
+        branches_in_token = employee_info.get("branches", [branch_code])
+        if not branches_in_token:
+            branches_in_token = [branch_code]
         
-        # ⭐ ถ้า RM อยู่ใน E ให้เพิ่ม BKK branches ด้วย (BKK และ E เป็นภูมิภาคเดียวกัน)
-        if region == "E":
-            branches_in_region.extend(get_all_branches_by_region("BKK"))
-        elif region == "BKK":
-            # ⭐ ถ้า RM อยู่ใน BKK ให้เพิ่ม E branches ด้วย
-            branches_in_region.extend(get_all_branches_by_region("E"))
-        
-        logger.info(f"RM viewing quotes for region {region}: {branches_in_region}")
+        logger.info(f"RM viewing quotes for branches from token: {branches_in_token}")
         
         # สร้าง placeholders สำหรับ SQL IN clause
-        placeholders = ",".join(["?" for _ in branches_in_region])
+        placeholders = ",".join(["?" for _ in branches_in_token])
         
         if status:
             query = f"""
@@ -514,7 +558,7 @@ def list_quotations(
                 WHERE Status = ? AND (BranchCode IN ({placeholders}) OR IBT_branch IN ({placeholders}))
                 ORDER BY LastUpdate DESC
             """
-            params = [status] + branches_in_region + branches_in_region
+            params = [status] + branches_in_token + branches_in_token
             cursor.execute(query, params)
         else:
             query = f"""
@@ -522,7 +566,7 @@ def list_quotations(
                 WHERE BranchCode IN ({placeholders}) OR IBT_branch IN ({placeholders})
                 ORDER BY LastUpdate DESC
             """
-            params = branches_in_region + branches_in_region
+            params = branches_in_token + branches_in_token
             cursor.execute(query, params)
     else:
         # พนักงานทั่วไป (Sales, ZM) เห็นเฉพาะสาขาของตนเอง
@@ -540,13 +584,34 @@ def list_quotations(
             """, (branch_code, branch_code))
 
     headers = [normalize_keys(row_to_dict(cursor, r)) for r in cursor.fetchall()]
+    
+    if not headers:
+        conn.close()
+        return []
+
+    # ⭐ ดึง Quote_Line ทั้งหมดในครั้งเดียว (แก้ N+1 problem)
+    quote_nos = [h["QuoteNo"] for h in headers]
+    placeholders_lines = ",".join(["?" for _ in quote_nos])
+    cursor.execute(
+        f"SELECT * FROM Quote_Line WHERE QuoteID IN ({placeholders_lines})",
+        quote_nos
+    )
+    all_lines = [normalize_keys(row_to_dict(cursor, r)) for r in cursor.fetchall()]
+    
+    # จัดกลุ่ม lines ตาม QuoteID
+    lines_by_quote = {}
+    for ln in all_lines:
+        qid = ln.get("QuoteID") or ln.get("Quoteid") or ln.get("quoteid")
+        if qid not in lines_by_quote:
+            lines_by_quote[qid] = []
+        lines_by_quote[qid].append(ln)
+
     result = []
 
     for h in headers:
         quote_no = h["QuoteNo"]
 
-        cursor.execute("SELECT * FROM Quote_Line WHERE QuoteID=?", (quote_no,))
-        lines = [normalize_keys(row_to_dict(cursor, r)) for r in cursor.fetchall()]
+        lines = lines_by_quote.get(quote_no, [])
 
         cart_items = [
             {
@@ -568,7 +633,7 @@ def list_quotations(
         result.append({
             "quoteNo": quote_no,
             "id": quote_no,
-            "status": h.get("Status", "draft"),  # ⭐ เพิ่ม status
+            "status": h.get("Status", "draft"),  
             "customer": {
                 "id": h["CustomerCode"],
                 "code": h["CustomerCode"],

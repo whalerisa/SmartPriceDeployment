@@ -67,71 +67,39 @@ function Dashboard() {
   useEffect(() => {
     async function loadDashboardData() {
       try {
-        // ⭐ โหลดสิทธิ์การเข้าถึงหน้าต่างๆ
-        try {
-          const resAccess = await api.get("/api/config/page-access/user-pages");
-          const accessiblePages = resAccess.data?.accessible_pages || [];
-          console.log("📋 Loaded page access:", accessiblePages); // Debug log
-          setPageAccess({
-            create_quote: accessiblePages.includes("create_quote"),
-            project_price: accessiblePages.includes("project_price"),
-            special_price_approval: accessiblePages.includes("special_price_approval"),
-            update_price: accessiblePages.includes("update_price"),
-          });
-        } catch (err) {
-          console.error("Failed to load page access:", err);
-          // ใช้ค่า default ถ้าโหลดไม่สำเร็จ
-        }
-
-        // โหลดใบเสนอราคาทั้งหมด
-        const resComplete = await api.get("/api/quotation", {
-          params: { status: "complete" },
-        });
-        const completeList = resComplete.data || [];
-
-        // ⭐ โหลดใบที่รอดำเนินการ (open, pending_approval, draft)
-        const [resOpen, resPending, resDraft] = await Promise.all([
-          api.get("/api/quotation", { params: { status: "open" } }),
-          api.get("/api/quotation", { params: { status: "pending_approval" } }),
-          api.get("/api/quotation", { params: { status: "draft" } })
-        ]);
-        
-        const pendingList = [
-          ...(resOpen.data || []),
-          ...(resPending.data || []),
-          ...(resDraft.data || [])
-        ];
-
-        // ---- 1) ใบเสนอราคาวันนี้ ----
+        // ⭐ โหลดทุกอย่างพร้อมกันใน Promise.all เดียว
         const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
-        const todayCountValue = completeList.filter((q) =>
-          (q.createdAt || "").startsWith(today)
-        ).length;
 
-        setTodayCount(todayCountValue);
+        const [resAccess, resStats, resPendingApprovals] = await Promise.all([
+          // 1. สิทธิ์การเข้าถึง
+          api.get("/api/config/page-access/user-pages").catch(() => ({ data: { accessible_pages: [] } })),
+          // 2. สถิติ Dashboard (endpoint ใหม่ที่ดึงแค่ตัวเลข)
+          api.get("/api/quotation/dashboard-stats").catch(() => ({ data: null })),
+          // 3. รอการอนุมัติราคาพิเศษ
+          api.get("/api/special-price-requests/pending/approvals").catch(() => ({ data: [] })),
+        ]);
 
-        // ---- 2) รอดำเนินการ ----
-        setPendingCount(pendingList.length);
+        // ตั้งค่าสิทธิ์
+        const accessiblePages = resAccess.data?.accessible_pages || [];
+        setPageAccess({
+          create_quote: accessiblePages.includes("create_quote"),
+          project_price: accessiblePages.includes("project_price"),
+          special_price_approval: accessiblePages.includes("special_price_approval"),
+          update_price: accessiblePages.includes("update_price"),
+        });
 
-        // ---- 3) ลูกค้าที่ติดต่อวันนี้ ----
-        const uniqueCustomers = new Set(
-          completeList
-            .filter((q) => (q.createdAt || "").startsWith(today))
-            .map((q) => q.customer?.id)
-        );
-        setContactCustomerCount(uniqueCustomers.size);
-
-        // ---- 4) รอการอนุมัติราคาพิเศษ ----
-        try {
-          const resPendingApprovals = await api.get("/api/special-price-requests/pending/approvals");
-          setPendingApprovalCount((resPendingApprovals.data || []).length);
-          setSpecialPriceAvailable(true);
-        } catch (err) {
-          // Special price request feature not available or not authorized
-          console.log("Special price requests not available:", err.response?.status);
-          setPendingApprovalCount(0);
-          setSpecialPriceAvailable(false);
+        // ตั้งค่าสถิติ
+        if (resStats.data) {
+          setTodayCount(resStats.data.today_count || 0);
+          setPendingCount(resStats.data.pending_count || 0);
+          setContactCustomerCount(resStats.data.contact_customer_count || 0);
         }
+
+        // ตั้งค่าการอนุมัติราคาพิเศษ
+        const approvals = resStats.data?.pending_approval_count ?? (resPendingApprovals.data || []).length;
+        setPendingApprovalCount(approvals);
+        setSpecialPriceAvailable(true);
+
       } catch (err) {
         console.error("Dashboard load error:", err);
       }

@@ -302,7 +302,7 @@ async def get_special_price_request_by_quote(quote_no: str):
         )
 
 
-@router.get("/pending/approvals")
+@router.get("/pending/approvals") #เมื่อกดเปิดหน้าคำขอ ดึงคำขอทั้งหมดตามRole
 async def get_pending_approvals(employee_info: dict = Depends(get_employee_info)):
     """Get pending approvals for current user"""
     try:
@@ -320,7 +320,7 @@ async def get_pending_approvals(employee_info: dict = Depends(get_employee_info)
         logger.info(f"  Employee ID: {current_employee_id}")
         logger.info(f"  Role: {current_role}")
         logger.info(f"  Branch: {current_branch}")
-        logger.info(f"  Full employee_info: {employee_info}")  # ⭐ เพิ่ม log
+        logger.info(f"  Full employee_info: {employee_info}")  
         
         conn = get_mssql_conn()
         cursor = conn.cursor()
