@@ -26,12 +26,12 @@ export function useStep6Data(state) {
   const [isPreOrder, setIsPreOrder] = useState(false);
   const [requiredDeliveryDate, setRequiredDeliveryDate] = useState("");
 
-  // Load VAT rate from config
+  // Load VAT rate — ใช้ endpoint สาธารณะที่ทุก role เรียกได้
   useEffect(() => {
     const loadVatRate = async () => {
       try {
-        const response = await api.get("/api/config/settings");
-        const rate = response.data?.system_config?.vat_rate || 0.07;
+        const response = await api.get("/api/config/vat-rate");
+        const rate = response.data?.vat_rate || 0.07;
         setVatRate(rate);
         console.log('[VAT] Loaded VAT rate:', rate);
       } catch (err) {

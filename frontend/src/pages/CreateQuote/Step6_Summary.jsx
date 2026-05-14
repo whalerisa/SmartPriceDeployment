@@ -1562,7 +1562,7 @@ function Step6_Summary({ state, dispatch }) {
         });
       }
 
-      // ⭐ ดึง project_code จาก pricing response (ถ้ามี)
+      //ดึง project_code จาก pricing response (ถ้ามี)
       // ใช้ project_code จากรายการแรกที่มี project_code
       const projectCodeFromPricing =
         payload.cart?.find((it) => it.project_code)?.project_code || "";
@@ -1581,9 +1581,9 @@ function Step6_Summary({ state, dispatch }) {
       );
 
       const rpaPayload = {
-        quote_code: payload.quoteNo?.substring(0, 4) || "TRQT", // เอา 4 ตัวแรกของเลขที่ใบเสนอราคา
+        quote_code: payload.quoteNo?.substring(0, 4) , // เอา 4 ตัวแรกของเลขที่ใบเสนอราคา
         customer_no: payload.customer.code,
-        sales_admin: payload.employee?.id || "20614", // ใช้ employee ID หรือค่า default
+        sales_admin: payload.employee?.id , // ใช้ employee ID หรือค่า default
         your_reference: payload.quoteNo || "", // ใส่เลขที่ใบเสนอราคาในระบบเรา
         project_code:
           projectCodeFromPricing ||
@@ -1595,7 +1595,7 @@ function Step6_Summary({ state, dispatch }) {
         items: rpaItems,
       };
 
-      // ⭐ เรียก Local RPA Agent ที่พอร์ต 8001 (Client-Side Agent)
+      // เรียก Local RPA Agent ที่พอร์ต 8001 (Client-Side Agent)
       // ลองหลาย URL เพื่อรองรับทั้งกรณีที่เปิดจากเครื่องเดียวกันและเครื่องอื่น
       const rpaUrls = [
         "http://127.0.0.1:8001/api/rpa/create-quote", // ลอง localhost ก่อน (เครื่องที่เปิด browser)
@@ -1737,7 +1737,6 @@ function Step6_Summary({ state, dispatch }) {
     }
   };
 
-  const handleGoBack = () => dispatch({ type: "SET_STEP", payload: 3 });
   const handlePrint = async () => {
     if (calculation.loading || calculation.error) return;
     console.log(
@@ -1875,7 +1874,7 @@ function Step6_Summary({ state, dispatch }) {
   const handleItemPicked = (item, qty) => {
     if (!item) return;
 
-    // ⭐ ดึงราคาจากหลายแหล่ง (prices.R2, priceR2, price)
+    // ดึงราคาจากหลายแหล่ง (prices.R2, priceR2, price)
     const price = item.prices?.R2 ?? item.priceR2 ?? item.price ?? 0;
     const cost = Number(item.cost || 0);
 
@@ -2516,17 +2515,6 @@ function Step6_Summary({ state, dispatch }) {
       {activeTab === "customer" && (
         <CustomerInfoTab key={customerCode} customer={state.customer} customerCode={customerCode} />
       )}
-
-      {/* Bottom nav */}
-      <div className="mt-8 flex justify-between">
-        <button
-          type="button"
-          onClick={handleGoBack}
-          className="flex items-center rounded-lg bg-gray-200 px-6 py-3 font-semibold text-gray-700 shadow-sm hover:bg-gray-300"
-        >
-          <ArrowLeftIcon /> ย้อนกลับ
-        </button>
-      </div>
 
       {/* Shipping modal */}
       <ShippingModal

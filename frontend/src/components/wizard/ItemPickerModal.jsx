@@ -253,33 +253,21 @@ function ItemPickerModal({ open, category, onClose, onConfirm }) {
   };
 
   // ---------------- Add to summary (แทนการปิด modal) ----------------
-  const handleAdd = async (item, qty) => {
-  try {
+  const handleAdd = (item, qty) => {
     const sku = item.sku || item.SKU;
 
-  // ⭐ โหลด detail + enrich
-    const res = await api.get(`/api/items/${sku}`);
-    const fullItem = res.data;
-
-    setActiveItem(fullItem);
-    
-    // ⭐ โหลด related items แยก
-    loadRelatedItems(fullItem);
-
+    // ⭐ เพิ่มลง cart ทันทีด้วยข้อมูลที่มีอยู่แล้ว (ไม่รอ API)
     const normalizedItem = {
-      ...fullItem,
-      unit:
-        fullItem.unit ||
-        fullItem["Base_Unit_of_Measure"] ||
-        fullItem.saleUnit ||
-        "-",
-      pkg_size: fullItem.pkg_size ?? 1,
-      product_weight: fullItem.product_weight ?? 0,
-      product_group: fullItem.product_group ?? null,
-      product_sub_group: fullItem.product_sub_group ?? null,
-      stock: fullItem.stock || null, // ⭐ เพิ่มข้อมูล stock
+      ...item,
+      unit: item.unit || item["Base_Unit_of_Measure"] || item.saleUnit || "-",
+      pkg_size: item.pkg_size ?? 1,
+      product_weight: item.product_weight ?? 0,
+      product_group: item.product_group ?? null,
+      product_sub_group: item.product_sub_group ?? null,
+      stock: item.stock || null,
     };
 
+    setActiveItem(normalizedItem);
     setSelectedItems((prev) => {
       const exist = prev.find((x) => x.sku === sku);
       if (exist) {
@@ -289,10 +277,40 @@ function ItemPickerModal({ open, category, onClose, onConfirm }) {
       }
       return [...prev, { sku, item: normalizedItem, qty }];
     });
-  } catch (err) {
-    console.error("load item detail error:", err);
-  }
-};
+
+    // ⭐ โหลด detail + related แบบ background (ไม่บล็อก UI)
+    api.get(`/api/items/${sku}`)
+      .then((res) => {
+        const fullItem = res.data;
+        // อัปเดต activeItem ด้วยข้อมูลครบ
+        setActiveItem(fullItem);
+        // อัปเดต selectedItems ด้วยข้อมูลครบ (enrich)
+        setSelectedItems((prev) =>
+          prev.map((x) =>
+            x.sku === sku
+              ? {
+                  ...x,
+                  item: {
+                    ...fullItem,
+                    unit: fullItem.unit || fullItem["Base_Unit_of_Measure"] || "-",
+                    pkg_size: fullItem.pkg_size ?? 1,
+                    product_weight: fullItem.product_weight ?? 0,
+                    product_group: fullItem.product_group ?? null,
+                    product_sub_group: fullItem.product_sub_group ?? null,
+                    stock: fullItem.stock || null,
+                  },
+                }
+              : x
+          )
+        );
+        loadRelatedItems(fullItem);
+      })
+      .catch((err) => {
+        console.error("load item detail error:", err);
+        // ไม่ต้องทำอะไร — ใช้ข้อมูลเดิมที่เพิ่มไปแล้ว
+        loadRelatedItems(normalizedItem);
+      });
+  };
 
 
   // ---------------- Remove one from summary ----------------

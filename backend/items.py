@@ -1396,7 +1396,7 @@ def get_glass_filter_options(
     
     conn.close()
     
-    # ⭐ กรอง SKU ตามเงื่อนไขปัจจุบัน (รองรับ multiple values)
+    # กรอง SKU ตามเงื่อนไขปัจจุบัน (รองรับ multiple values)
     filtered_skus = []
     for sku in skus:
         parsed = parse_glass_sku(sku)
@@ -1417,7 +1417,7 @@ def get_glass_filter_options(
         
         filtered_skus.append(sku)
     
-    # ⭐ สร้าง options สำหรับแต่ละฟิลเตอร์ โดยกรองตามเงื่อนไขปัจจุบัน
+    # สร้าง options สำหรับแต่ละฟิลเตอร์ โดยกรองตามเงื่อนไขปัจจุบัน
     brands = {}
     types = {}
     subGroups = {}

@@ -546,6 +546,20 @@ async def delete_role(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/vat-rate") # ดึง VAT rate — ทุก role เรียกได้ (ใช้ใน CreateQuote)
+async def get_vat_rate(employee: dict = Depends(get_current_employee)):
+    """
+    Get current VAT rate. Accessible to all authenticated users.
+    Admin sets the rate via PUT /settings, all roles read it here.
+    """
+    vat_rate_str = os.getenv("VAT_RATE", "0.07")
+    try:
+        vat_rate = float(vat_rate_str)
+    except ValueError:
+        vat_rate = 0.07
+    return {"vat_rate": vat_rate}
+
+
 @router.get("/page-access/check/{page_id}") #เช็คสิทธิ์เข้าถึงหน้า	ทุกครั้งที่ User เข้าหน้า
 async def check_page_access_endpoint(
     page_id: str,
