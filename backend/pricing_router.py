@@ -104,31 +104,6 @@ def _compute_line_total_helper(row):
         return round_up_050(line_total)
 
 
-def calculate_tax_invoice_surcharge(total_quantity: float) -> float:
-    """
-    คำนวณค่าใบกำกับภาษี โดยแฝงเข้าไปในราคาต่อชิ้น
-
-    ตรรกะ: บวก 10 บาทรวมทั้งบิล หารด้วยจำนวนชิ้นรวมทุก SKU
-    - เช่น A=100 ชิ้น, B=10 ชิ้น → total=110 → 10/110 ≈ 0.0909... → ปัดขึ้นเป็น 0.10
-    - ปัดขึ้นให้ลง .50 หรือ .00 เท่านั้น
-
-    ตัวอย่าง:
-    - total_qty=110: 10/110 = 0.0909 → ปัดขึ้นเป็น 0.50
-    - total_qty=100: 10/100 = 0.10  → ปัดขึ้นเป็น 0.50
-    - total_qty=4:   10/4   = 2.50  → ลงตัว ใช้ 2.50
-    - total_qty=5:   10/5   = 2.00  → ลงตัว ใช้ 2.00
-    """
-    if total_quantity <= 0:
-        return 0.0
-
-    surcharge_per_unit = 10.0 / total_quantity
-
-    # ปัดขึ้นให้ลง .50 หรือ .00 เท่านั้น
-    rounded = math.ceil(surcharge_per_unit * 2) / 2
-
-    return rounded
-
-
 def get_vat_rate() -> float:
     """Get VAT rate from environment (default 0.07 = 7%)"""
     try:
@@ -555,17 +530,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
             req.customerData.get("shippingCustomerPay", 0) or 0
         )
 
-        # ⭐ คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
-        if req.needTaxInvoice:
-            total_quantity = float(df_calc["Quantity"].sum())
-            tax_invoice_surcharge = calculate_tax_invoice_surcharge(total_quantity)
-            
-            # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
-            df_calc["UnitPrice"] = df_calc["UnitPrice"] + tax_invoice_surcharge
-            
-            # ⭐ คำนวณ LineTotal ใหม่
-            df_calc["LineTotal"] = df_calc.apply(_compute_line_total_helper, axis=1)
-
         totals = _calculate_totals(df_calc, shipping_customer_pay)
 
         # -----------------------------
@@ -975,17 +939,6 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
     shipping_customer_pay = float(
         req.customerData.get("shippingCustomerPay", 0) or 0
     )
-
-    # คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
-    if req.needTaxInvoice:
-        total_quantity = float(df_price["Quantity"].sum())
-        tax_invoice_surcharge = calculate_tax_invoice_surcharge(total_quantity)
-        
-        # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
-        df_price["UnitPrice"] = df_price["UnitPrice"] + tax_invoice_surcharge
-        
-        # คำนวณ _LineTotal ใหม่
-        df_price["_LineTotal"] = df_price.apply(_compute_line_total_helper, axis=1)
 
     totals = _calculate_totals(df_price, shipping_customer_pay)
 
