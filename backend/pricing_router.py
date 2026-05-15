@@ -104,30 +104,28 @@ def _compute_line_total_helper(row):
         return round_up_050(line_total)
 
 
-def calculate_tax_invoice_surcharge(item_count: int) -> float:
+def calculate_tax_invoice_surcharge(total_quantity: float) -> float:
     """
     คำนวณค่าใบกำกับภาษี โดยแฝงเข้าไปในราคาต่อชิ้น
-    
-    ตรรมชาติ: บวก 10 บาท แต่แฝงเข้าไปในราคาต่อชิ้น
-    - นำ 10 ÷ จำนวนสินค้า = ค่าต่อชิ้น
-    - ถ้าหารไม่ลงตัว ให้ปัดขึ้นให้ลง .50 หรือ .00 เท่านั้น
-    
+
+    ตรรกะ: บวก 10 บาทรวมทั้งบิล หารด้วยจำนวนชิ้นรวมทุก SKU
+    - เช่น A=100 ชิ้น, B=10 ชิ้น → total=110 → 10/110 ≈ 0.0909... → ปัดขึ้นเป็น 0.10
+    - ปัดขึ้นให้ลง .50 หรือ .00 เท่านั้น
+
     ตัวอย่าง:
-    - 3 ชิ้น: 10 ÷ 3 = 3.33... → ปัดขึ้นเป็น 3.50
-    - 4 ชิ้น: 10 ÷ 4 = 2.50 → ลงตัว ใช้ 2.50
-    - 5 ชิ้น: 10 ÷ 5 = 2.00 → ลงตัว ใช้ 2.00
-    - 6 ชิ้น: 10 ÷ 6 = 1.67... → ปัดขึ้นเป็น 2.00
+    - total_qty=110: 10/110 = 0.0909 → ปัดขึ้นเป็น 0.50
+    - total_qty=100: 10/100 = 0.10  → ปัดขึ้นเป็น 0.50
+    - total_qty=4:   10/4   = 2.50  → ลงตัว ใช้ 2.50
+    - total_qty=5:   10/5   = 2.00  → ลงตัว ใช้ 2.00
     """
-    if item_count <= 0:
+    if total_quantity <= 0:
         return 0.0
-    
-    # คำนวณค่าต่อชิ้น
-    surcharge_per_item = 10.0 / item_count
-    
+
+    surcharge_per_unit = 10.0 / total_quantity
+
     # ปัดขึ้นให้ลง .50 หรือ .00 เท่านั้น
-    # วิธี: คูณ 2 → ปัดขึ้น → หาร 2
-    rounded = math.ceil(surcharge_per_item * 2) / 2
-    
+    rounded = math.ceil(surcharge_per_unit * 2) / 2
+
     return rounded
 
 
@@ -559,8 +557,8 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
         # ⭐ คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
         if req.needTaxInvoice:
-            item_count = len(df_calc)
-            tax_invoice_surcharge = calculate_tax_invoice_surcharge(item_count)
+            total_quantity = float(df_calc["Quantity"].sum())
+            tax_invoice_surcharge = calculate_tax_invoice_surcharge(total_quantity)
             
             # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
             df_calc["UnitPrice"] = df_calc["UnitPrice"] + tax_invoice_surcharge
@@ -980,8 +978,8 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
 
     # คำนวณค่าใบกำกับภาษี (ถ้าลูกค้าต้องการ)
     if req.needTaxInvoice:
-        item_count = len(df_price)
-        tax_invoice_surcharge = calculate_tax_invoice_surcharge(item_count)
+        total_quantity = float(df_price["Quantity"].sum())
+        tax_invoice_surcharge = calculate_tax_invoice_surcharge(total_quantity)
         
         # บวกค่าใบกำกับภาษีเข้าไปในราคา (แฝงเข้าไปในแต่ละชิ้น)
         df_price["UnitPrice"] = df_price["UnitPrice"] + tax_invoice_surcharge
