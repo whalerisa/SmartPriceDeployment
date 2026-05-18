@@ -14,6 +14,7 @@ Features:
 
 import logging
 import os
+import re
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +23,34 @@ import pandas as pd
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+# ⭐ Filename key pattern: 1 letter (G/A/Y/S/C/E) + 4 digits, e.g. "G0001"
+# ตัวอย่างชื่อไฟล์ที่รองรับ: Glass_690518_G0001.xlsx, G18052569_G0001.xlsx
+_KEY_PATTERN = re.compile(r'_([GAYSCE]\d{4})$', re.IGNORECASE)
+
+
+def extract_version_key_from_filename(filename: str) -> Optional[str]:
+    """
+    ดึง key (G0000) จากชื่อไฟล์
+    
+    รองรับ pattern เช่น:
+        - Glass_690518_G0001.xlsx → "G0001"
+        - G18052569_G0001.xlsx → "G0001"
+    
+    Args:
+        filename: ชื่อไฟล์ (มีหรือไม่มี extension ก็ได้)
+    
+    Returns:
+        Key เป็นตัวพิมพ์ใหญ่ หรือ None ถ้าไม่พบ pattern
+    """
+    if not filename:
+        return None
+    name_without_ext = os.path.splitext(os.path.basename(filename))[0]
+    match = _KEY_PATTERN.search(name_without_ext)
+    if match:
+        return match.group(1).upper()
+    return None
 
 
 @dataclass
@@ -51,13 +80,19 @@ class PriceUploadService:
     """
     
     # Required columns in price file
-    REQUIRED_COLUMNS = ["SDM", "R2", "R1", "W2", "W1"]
+    REQUIRED_COLUMNS = ["SDM", "R2", "R1", "W2", "W1", "Branch"]
     
     # Accepted SKU column names (in order of preference)
     SKU_COLUMN_NAMES = ["SKU", "No_", "Item_No", "No", "ItemNo"]
     
+    # Accepted Branch column names (in order of preference)
+    BRANCH_COLUMN_NAMES = ["Branch", "BranchCode", "Branch_Code", "สาขา"]
+    
     # Branch code for this upload (set via process_upload)
     _branch_code = None
+    
+    # ⭐ Version key from filename (set via process_upload)
+    _version_key = None
     
     # Supported file extensions
     SUPPORTED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
@@ -72,14 +107,15 @@ class PriceUploadService:
         self.db_connection = db_connection
         logger.info("PriceUploadService initialized")
     
-    def process_upload(self, file_path: str, branch_code: str, employee_info: dict) -> UploadResult:
+    def process_upload(self, file_path: str, branch_code: Optional[str], employee_info: dict, version_key: Optional[str] = None) -> UploadResult:
         """
         Process price file (CSV or Excel) and update Item_Price table.
         
         Process:
-        1. Validate file format and required columns
+        1. Validate file format and required columns (including Branch column)
         2. Parse file into list of price records
         3. For each row:
+           - Read BranchCode from Branch column in file
            - Validate SKU exists in Item_Master
            - Skip rows with invalid SKU and log warning
            - Upsert to Item_Price table (update if exists, insert if not)
@@ -88,6 +124,10 @@ class PriceUploadService:
         
         Args:
             file_path: Path to uploaded file
+            branch_code: (Optional) Legacy parameter - now reads from file's Branch column
+            employee_info: Employee information (employee_id, name, role)
+            version_key: ⭐ Key ที่จะใช้บันทึกในคอลัมน์ version_name
+                         ถ้าไม่ระบุจะใช้ default UPLOAD_YYYYMMDD_HHMMSS
         
         Returns:
             UploadResult with statistics (total_rows, successful, errors)
@@ -95,10 +135,13 @@ class PriceUploadService:
         Raises:
             ValidationError: When file format is invalid or required columns missing
         """
-        self._branch_code = branch_code
+        self._branch_code = branch_code  # Legacy - not used anymore
         self._employee_info = employee_info  # ⭐ เก็บข้อมูล employee
-        logger.info(f"Processing price upload: {file_path} for branch: {branch_code}")
+        self._version_key = version_key  # ⭐ เก็บ version key
+        logger.info(f"Processing price upload: {file_path}")
         logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')})")
+        if version_key:
+            logger.info(f"Version key: {version_key}")
         
         # Validate file format
         self._validate_file_format(file_path)
@@ -146,6 +189,21 @@ class PriceUploadService:
                     errors += 1
                     continue
                 
+                # ⭐ Read BranchCode from file
+                branch_value = row.get(self._branch_column, "")
+                if isinstance(branch_value, (int, float)):
+                    branch_code = str(branch_value).strip()
+                else:
+                    branch_code = str(branch_value).strip() if branch_value else ""
+                
+                # Skip empty Branch
+                if not branch_code or branch_code.lower() == 'nan':
+                    error_msg = f"Row {idx}: SKU '{sku}' has empty Branch code"
+                    logger.warning(error_msg)
+                    error_details.append(error_msg)
+                    errors += 1
+                    continue
+                
                 # Validate SKU exists in Item_Master
                 if not self._sku_exists(sku):
                     error_msg = f"Row {idx}: SKU '{sku}' not found in Item_Master"
@@ -169,7 +227,7 @@ class PriceUploadService:
                 
                 price_record = {
                     "SKU": sku,
-                    "BranchCode": self._branch_code,
+                    "BranchCode": branch_code,  # ⭐ ใช้ branch_code จากไฟล์
                     "SDM": self._parse_decimal(row.get("SDM")),
                     "R2": self._parse_decimal(row.get("R2")),
                     "R1": self._parse_decimal(row.get("R1")),
@@ -290,7 +348,6 @@ class PriceUploadService:
         
         # Get columns from first row
         actual_columns = set(price_data[0].keys())
-        required_columns = set(self.REQUIRED_COLUMNS)
         
         # Check for SKU column (accept multiple variations)
         sku_column = None
@@ -308,7 +365,24 @@ class PriceUploadService:
         self._sku_column = sku_column
         logger.debug(f"Using SKU column: {sku_column}")
         
-        # Check other required columns
+        # Check for Branch column (accept multiple variations)
+        branch_column = None
+        for col_name in self.BRANCH_COLUMN_NAMES:
+            if col_name in actual_columns:
+                branch_column = col_name
+                break
+        
+        if not branch_column:
+            raise ValidationError(
+                f"Missing Branch column. Expected one of: {', '.join(self.BRANCH_COLUMN_NAMES)}"
+            )
+        
+        # Store the Branch column name for later use
+        self._branch_column = branch_column
+        logger.debug(f"Using Branch column: {branch_column}")
+        
+        # Check other required columns (excluding Branch since we already checked it)
+        required_columns = set(self.REQUIRED_COLUMNS) - {"Branch"}
         missing_columns = required_columns - actual_columns
         
         if missing_columns:
@@ -362,14 +436,20 @@ class PriceUploadService:
         """
         สร้าง version log ใน Item_Update_Version
         
+        - ถ้ามี self._version_key: ใช้ key เป็น version_name (เช่น "G0001")
+        - ถ้าไม่มี: ใช้ default UPLOAD_YYYYMMDD_HHMMSS
+        
         Returns:
             version_id ที่สร้างขึ้น
         """
         cursor = self.db_connection.cursor()
         try:
-            # สร้าง version_name: UPLOAD_YYYYMMDD_HHMMSS
-            now = datetime.now()
-            version_name = f"UPLOAD_{now.strftime('%Y%m%d_%H%M%S')}"
+            # ⭐ version_name: ใช้ key ถ้ามี ไม่งั้นใช้ default
+            if self._version_key:
+                version_name = self._version_key
+            else:
+                now = datetime.now()
+                version_name = f"UPLOAD_{now.strftime('%Y%m%d_%H%M%S')}"
             
             # หา update_type จาก SKU (ตัวอักษรแรก)
             categories = set()

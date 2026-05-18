@@ -4,102 +4,13 @@ import api from "../../services/api";
 export default function UploadPriceExcel({ onUploaded }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [regions, setRegions] = useState([]);
-  const [branches, setBranches] = useState([]);
-  const [selectedBranches, setSelectedBranches] = useState([]);
-  const [loadingRegions, setLoadingRegions] = useState(true);
-  const [loadingBranches, setLoadingBranches] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(""); // วันที่ต้องการให้อัปโหลด
   const [uploadMode, setUploadMode] = useState(""); // "" | "immediate" | "scheduled" - เริ่มต้นไม่เลือก
-  const [selectionMode, setSelectionMode] = useState(""); // "" | "branch" | "region" - วิธีการเลือก
-  const [selectedRegion, setSelectedRegion] = useState(""); // เลือกภูมิภาค
 
-  // Fetch regions on component mount
-  useEffect(() => {
-    const fetchRegions = async () => {
-      try {
-        console.log("Fetching regions from /api/branches/regions");
-        const res = await api.get("/api/branches/regions");
-        console.log("Regions response:", res.data);
-        
-        setRegions(res.data.regions || []);
-      } catch (error) {
-        console.error("Failed to fetch regions:", error);
-        console.error("Error response:", error.response?.data);
-      } finally {
-        setLoadingRegions(false);
-      }
-    };
-
-    fetchRegions();
-  }, []);
-
-  // Fetch all branches on component mount
-  useEffect(() => {
-    const fetchAllBranches = async () => {
-      try {
-        console.log("Fetching all branches from /api/branches");
-        const res = await api.get("/api/branches");
-        console.log("All branches response:", res.data);
-        
-        setBranches(res.data.branches || []);
-      } catch (error) {
-        console.error("Failed to fetch branches:", error);
-        console.error("Error response:", error.response?.data);
-      }
-    };
-
-    fetchAllBranches();
-  }, []);
-
-  // Fetch branches when region is selected (for region selection mode)
-  useEffect(() => {
-    if (selectionMode !== "region" || !selectedRegion) {
-      return;
-    }
-
-    const fetchBranchesByRegion = async () => {
-      setLoadingBranches(true);
-      try {
-        console.log(`Fetching branches for region: ${selectedRegion}`);
-        const res = await api.get(`/api/branches/regions/${selectedRegion}`);
-        console.log("Branches response:", res.data);
-        
-        // Auto-select all branches in the region
-        const branchCodes = res.data.branches.map(b => b.Code);
-        setSelectedBranches(branchCodes);
-      } catch (error) {
-        console.error("Failed to fetch branches:", error);
-        console.error("Error response:", error.response?.data);
-        setSelectedBranches([]);
-      } finally {
-        setLoadingBranches(false);
-      }
-    };
-
-    fetchBranchesByRegion();
-  }, [selectionMode, selectedRegion]);
-
-  const handleBranchToggle = (branchCode) => {
-    setSelectedBranches((prev) =>
-      prev.includes(branchCode)
-        ? prev.filter((code) => code !== branchCode)
-        : [...prev, branchCode]
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (selectedBranches.length === branches.length) {
-      // Deselect all
-      setSelectedBranches([]);
-    } else {
-      // Select all
-      setSelectedBranches(branches.map((b) => b.Code));
-    }
-  };
+  // No need to fetch regions and branches anymore since we read from file
 
   const handleUpload = async () => {
-    if (!file || selectedBranches.length === 0 || !selectionMode) return;
+    if (!file || !uploadMode) return;
 
     // ⭐ ตรวจสอบว่าเลือกโหมดการอัปโหลดหรือยัง
     if (!uploadMode) {
@@ -113,7 +24,18 @@ export default function UploadPriceExcel({ onUploaded }) {
       return;
     }
 
-    // ⭐ Validate Excel file before upload
+    // ⭐ ตรวจสอบ pattern ชื่อไฟล์: ต้องลงท้ายด้วย _G0000 (ตัวอักษรประเภท + เลข 4 หลัก)
+    const filenameKeyPattern = /_[GAYSCE]\d{4}\.(xlsx|xls|csv)$/i;
+    if (!filenameKeyPattern.test(file.name)) {
+      alert(
+        "⚠️ รูปแบบชื่อไฟล์ไม่ถูกต้อง\n\n" +
+        "ชื่อไฟล์ต้องลงท้ายด้วย key รูปแบบ _G0000 (ตัวอักษรประเภท + เลข 4 หลัก)\n" +
+        "ตัวอย่าง: Glass_690518_G0001.xlsx"
+      );
+      return;
+    }
+
+    // ⭐ Validate Excel file before upload (immediate mode only)
     if (uploadMode === "immediate") {
       const validationResult = await validateExcelFile(file);
       if (!validationResult.valid) {
@@ -127,16 +49,13 @@ export default function UploadPriceExcel({ onUploaded }) {
       const form = new FormData();
       form.append("file", file);
 
-      // Send branch_codes as query parameter (comma-separated)
-      const branchCodes = selectedBranches.join(",");
-      
-      // ⭐ เลือก endpoint ตามโหมด
+      // ⭐ เลือก endpoint ตามโหมด (ไม่ต้องส่ง branch_code แล้ว)
       let endpoint;
       if (uploadMode === "immediate") {
-        endpoint = `/api/admin/prices/upload?branch_code=${branchCodes}`;
+        endpoint = `/api/admin/prices/upload`;
       } else {
-        // Scheduled upload
-        endpoint = `/api/admin/prices/schedule?branch_code=${branchCodes}&scheduled_date=${scheduledDate}`;
+        // Scheduled upload - still needs branch_code for scheduled jobs
+        endpoint = `/api/admin/prices/schedule?scheduled_date=${scheduledDate}`;
       }
       
       const res = await api.post(endpoint, form);
@@ -167,9 +86,6 @@ export default function UploadPriceExcel({ onUploaded }) {
       
       // ⭐ รีเซ็ตฟอร์ม
       setFile(null);
-      setSelectedBranches([]);
-      setSelectedRegion("");
-      setSelectionMode("");
       setScheduledDate("");
       setUploadMode(""); // รีเซ็ตเป็นไม่เลือก
     } catch (error) {
@@ -181,7 +97,7 @@ export default function UploadPriceExcel({ onUploaded }) {
     }
   };
 
-  // ⭐ Validate Excel file for NULL values in required columns
+  // ⭐ Validate Excel file for NULL values and Branch column
   const validateExcelFile = async (file) => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -206,8 +122,9 @@ export default function UploadPriceExcel({ onUploaded }) {
           const headers = rows[0];
           
           // Find required columns
-          const requiredColumns = ['SDM', 'R2', 'R1', 'W2', 'W1'];
+          const requiredColumns = ['SDM', 'R2', 'R1', 'W2', 'W1', 'Branch'];
           const skuColumns = ['SKU', 'No_', 'Item_No', 'No', 'ItemNo'];
+          const branchColumns = ['Branch', 'BranchCode', 'Branch_Code', 'สาขา'];
           
           // Find SKU column index
           let skuIndex = -1;
@@ -221,11 +138,24 @@ export default function UploadPriceExcel({ onUploaded }) {
             return;
           }
           
-          // Find required column indices
+          // Find Branch column index
+          let branchIndex = -1;
+          for (const col of branchColumns) {
+            branchIndex = headers.findIndex(h => h === col);
+            if (branchIndex !== -1) break;
+          }
+          
+          if (branchIndex === -1) {
+            resolve({ valid: false, errors: ['ไม่พบคอลัมน์ Branch (ต้องมี Branch, BranchCode, Branch_Code, หรือ สาขา)'] });
+            return;
+          }
+          
+          // Find required column indices (excluding Branch since we already checked it)
           const columnIndices = {};
           const missingColumns = [];
           
           for (const col of requiredColumns) {
+            if (col === 'Branch') continue; // Already checked
             const index = headers.findIndex(h => h === col);
             if (index === -1) {
               missingColumns.push(col);
@@ -249,12 +179,18 @@ export default function UploadPriceExcel({ onUploaded }) {
           for (let i = 1; i < maxRowsToCheck; i++) {
             const row = rows[i];
             const sku = row[skuIndex];
+            const branch = row[branchIndex];
             
             // Skip empty rows
             if (!sku || sku.toString().trim() === '') continue;
             
+            // Check Branch column
+            if (!branch || branch.toString().trim() === '') {
+              errors.push(`แถวที่ ${i + 1} (SKU: ${sku}): คอลัมน์ Branch เป็นค่าว่าง`);
+            }
+            
             // Check each required column
-            for (const col of requiredColumns) {
+            for (const col of Object.keys(columnIndices)) {
               const value = row[columnIndices[col]];
               
               if (value === null || value === undefined || value === '') {
@@ -351,163 +287,21 @@ export default function UploadPriceExcel({ onUploaded }) {
           </div>
         )}
 
-        {/* Selection Mode Toggle */}
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-gray-700">
-            วิธีการเลือกสาขา <span className="text-red-500">*</span>
-          </label>
-          <div className="flex gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <label className="flex items-center gap-2 cursor-pointer flex-1">
-              <input
-                type="radio"
-                name="selectionMode"
-                value="branch"
-                checked={selectionMode === "branch"}
-                onChange={(e) => {
-                  setSelectionMode(e.target.value);
-                  setSelectedBranches([]);
-                  setSelectedRegion("");
-                }}
-                className="w-4 h-4 text-blue-600"
-              />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-gray-700">เลือกรายสาขา</span>
-                <p className="text-xs text-gray-500">เลือกได้หลายสาขา</p>
+        {/* Info Box - Branch from File */}
+        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <span className="text-blue-600 text-lg">ℹ️</span>
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-blue-900 mb-1">
+                รหัสสาขาจะถูกอ่านจากไฟล์ Excel
               </div>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer flex-1">
-              <input
-                type="radio"
-                name="selectionMode"
-                value="region"
-                checked={selectionMode === "region"}
-                onChange={(e) => {
-                  setSelectionMode(e.target.value);
-                  setSelectedBranches([]);
-                  setSelectedRegion("");
-                }}
-                className="w-4 h-4 text-blue-600"
-              />
-              <div className="flex-1">
-                <span className="text-sm font-medium text-gray-700">เลือกตามภาค</span>
-                <p className="text-xs text-gray-500">เลือกภาคเดียว</p>
+              <div className="text-xs text-blue-800">
+                ไฟล์ Excel ต้องมีคอลัมน์ <span className="font-mono font-semibold">Branch</span> (หรือ BranchCode, Branch_Code, สาขา) 
+                ระบบจะบันทึกราคาลงสาขาที่ระบุในแต่ละแถวโดยอัตโนมัติ
               </div>
-            </label>
-          </div>
-          {!selectionMode && (
-            <div className="text-xs text-amber-600 mt-1">
-              ⚠️ กรุณาเลือกวิธีการเลือกสาขา
             </div>
-          )}
+          </div>
         </div>
-
-        {/* Region Selection (แสดงเฉพาะเมื่อเลือก region mode) */}
-        {selectionMode === "region" && (
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium text-gray-700">
-              เลือกภูมิภาค <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={selectedRegion}
-              onChange={(e) => setSelectedRegion(e.target.value)}
-              disabled={loadingRegions}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-            >
-              <option value="">-- เลือกภูมิภาค --</option>
-              {loadingRegions ? (
-                <option disabled>กำลังโหลดภูมิภาค...</option>
-              ) : (
-                regions.map((region) => (
-                  <option key={region.code} value={region.code}>
-                    {region.name} ({region.branches.length} สาขา)
-                  </option>
-                ))
-              )}
-            </select>
-            
-            {/* Show selected region info and branches */}
-            {selectedRegion && !loadingBranches && (
-              <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="text-sm font-semibold text-blue-900 mb-2">
-                  ✓ ภูมิภาค: {regions.find(r => r.code === selectedRegion)?.name}
-                </div>
-                <div className="text-xs text-blue-800 mb-2">
-                  สาขาที่จะอัปโหลด ({selectedBranches.length} สาขา):
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedBranches.map((branchCode) => {
-                    const branch = regions
-                      .find(r => r.code === selectedRegion)
-                      ?.branches.find(b => b.Code === branchCode);
-                    return (
-                      <span
-                        key={branchCode}
-                        className="inline-block px-2 py-1 bg-blue-200 text-blue-900 rounded text-xs font-medium"
-                      >
-                        {branchCode} - {branch?.Name}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            
-            {loadingBranches && (
-              <div className="text-xs text-gray-500">
-                กำลังโหลดสาขา...
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Branch Selection - Multi Select (แสดงเฉพาะเมื่อเลือก branch mode) */}
-        {selectionMode === "branch" && (
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium text-gray-700">
-              เลือกสาขา <span className="text-red-500">*</span>
-            </label>
-            <div className="border border-gray-300 rounded-lg p-3 bg-white max-h-96 overflow-y-auto">
-              {branches.length === 0 ? (
-                <div className="text-sm text-gray-500">กำลังโหลดสาขา...</div>
-              ) : (
-                <div className="space-y-2">
-                  {/* Select All Checkbox */}
-                  <label className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded border-b border-gray-200 pb-3 mb-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedBranches.length === branches.length && branches.length > 0}
-                      onChange={handleSelectAll}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-semibold text-gray-800">
-                      เลือกทั้งหมด
-                    </span>
-                  </label>
-
-                  {/* Individual Branch Checkboxes */}
-                  {branches.map((branch) => (
-                    <label key={branch.Code} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
-                      <input
-                        type="checkbox"
-                        checked={selectedBranches.includes(branch.Code)}
-                        onChange={() => handleBranchToggle(branch.Code)}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">
-                        {branch.Code} - {branch.Name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-            {selectedBranches.length > 0 && (
-              <div className="text-xs text-blue-600">
-                เลือกแล้ว {selectedBranches.length} สาขา
-              </div>
-            )}
-          </div>
-        )}
 
         {/* File Upload Section */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
@@ -544,12 +338,12 @@ export default function UploadPriceExcel({ onUploaded }) {
           {/* Upload Button */}
           <button
             onClick={handleUpload}
-            disabled={!file || selectedBranches.length === 0 || !uploadMode || !selectionMode || loading || (uploadMode === "scheduled" && !scheduledDate)}
+            disabled={!file || !uploadMode || loading || (uploadMode === "scheduled" && !scheduledDate)}
             className={`
               px-6 py-2 rounded-lg text-sm font-semibold text-white
               transition-all
               ${
-                loading || !file || selectedBranches.length === 0 || !uploadMode || !selectionMode || (uploadMode === "scheduled" && !scheduledDate)
+                loading || !file || !uploadMode || (uploadMode === "scheduled" && !scheduledDate)
                   ? "bg-gray-300 cursor-not-allowed"
                   : "bg-blue-600 hover:bg-blue-700 active:scale-95"
               }
@@ -557,20 +351,18 @@ export default function UploadPriceExcel({ onUploaded }) {
           >
             {loading 
               ? "กำลังประมวลผล..." 
-              : !selectionMode
-                ? "เลือกวิธีการเลือกสาขา"
-                : !uploadMode
-                  ? "เลือกโหมดการอัปโหลด"
-                  : uploadMode === "immediate" 
-                    ? "อัปโหลดทันที" 
-                    : "บันทึกตารางอัปโหลด"
+              : !uploadMode
+                ? "เลือกโหมดการอัปโหลด"
+                : uploadMode === "immediate" 
+                  ? "อัปโหลดทันที" 
+                  : "บันทึกตารางอัปโหลด"
             }
           </button>
         </div>
 
         {/* Hint */}
         <div className="mt-1 text-xs text-gray-400">
-          รองรับเฉพาะไฟล์ .xlsx • เลือกวิธีการเลือกสาขา (รายสาขาหรือตามภาค) • เลือกสาขาอย่างน้อย 1 สาขาก่อนอัปโหลด
+          รองรับเฉพาะไฟล์ .xlsx • ชื่อไฟล์ต้องลงท้ายด้วย _G0000 เช่น <span className="font-mono">Glass_690518_G0001.xlsx</span> • ไฟล์ต้องมีคอลัมน์ Branch (หรือ BranchCode, Branch_Code, สาขา)
           {uploadMode === "scheduled" && " • ระบบจะอัปโหลดอัตโนมัติในวันที่กำหนด"}
         </div>
       </div>

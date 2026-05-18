@@ -63,7 +63,7 @@ if os.path.exists(env_path):
 else:
     print(f"⚠️ .env file not found at: {env_path}")
 
-from services.price_upload_service import PriceUploadService, UploadResult
+from services.price_upload_service import PriceUploadService, UploadResult, extract_version_key_from_filename
 
 
 # =========================
@@ -167,10 +167,10 @@ class ScheduledUploadJobResult:
 
 def parse_filename_date(filename: str) -> Optional[datetime]:
     """
-    Parse date from filename format: {Category}{DDMMYYYY}.xlsx
+    Parse date from filename format: {Category}{DDMMYYYY}.xlsx or {Category}{DDMMYYYY}_{Key}.xlsx
     
     Args:
-        filename: Filename to parse (e.g., "G26092569.xlsx")
+        filename: Filename to parse (e.g., "G26092569.xlsx" or "G26092569_G0001.xlsx")
     
     Returns:
         datetime object or None if parsing fails
@@ -178,6 +178,10 @@ def parse_filename_date(filename: str) -> Optional[datetime]:
     try:
         # Remove extension
         name_without_ext = os.path.splitext(filename)[0]
+        
+        # ⭐ ตัด suffix _G0000 ออกก่อนถ้ามี
+        import re as _re
+        name_without_ext = _re.sub(r'_[GAYSCE]\d{4}$', '', name_without_ext, flags=_re.IGNORECASE)
         
         # Extract date part (skip first character which is category)
         if len(name_without_ext) < 9:  # Category + 8 digits
@@ -244,53 +248,47 @@ def process_scheduled_file(file_path: str, conn: pyodbc.Connection) -> UploadRes
     # Load metadata
     metadata = load_metadata(file_path)
     
+    # ⭐ ดึง version_key จาก metadata ก่อน, ถ้าไม่มีลอง parse จากชื่อไฟล์
+    version_key = None
+    if metadata:
+        version_key = metadata.get("version_key")
+    if not version_key:
+        version_key = extract_version_key_from_filename(file_path)
+    if version_key:
+        logger.info(f"Using version key: {version_key}")
+    else:
+        logger.warning(f"⚠️ No version key found for {file_path}, will use default UPLOAD_... naming")
+    
     if not metadata:
         logger.warning(f"No metadata found for {file_path}, using defaults")
-        branch_codes = ["00TR"]  # Default branch
         employee_info = {
             "employee_id": "system",
             "name": "Scheduled Upload System",
             "role": "SYSTEM"
         }
     else:
-        branch_codes = metadata.get("branch_codes", ["00TR"])
         employee_info = {
             "employee_id": metadata.get("uploaded_by", "system"),
             "name": metadata.get("uploaded_by_name", "Scheduled Upload System"),
             "role": "SYSTEM"
         }
     
-    # Process upload for each branch
+    # ⭐ Process upload once - branch codes are read from file
     service = PriceUploadService(conn)
     
-    total_rows = 0
-    total_successful = 0
-    total_errors = 0
-    all_error_details = []
-    
-    for branch in branch_codes:
-        logger.info(f"  Processing for branch: {branch}")
-        result = service.process_upload(
-            file_path=file_path,
-            branch_code=branch,
-            employee_info=employee_info
-        )
-        
-        total_rows += result.total_rows
-        total_successful += result.successful_updates
-        total_errors += result.errors
-        all_error_details.extend(result.error_details)
-        
-        logger.info(
-            f"  Branch {branch}: successful={result.successful_updates}, errors={result.errors}"
-        )
-    
-    return UploadResult(
-        total_rows=total_rows,
-        successful_updates=total_successful,
-        errors=total_errors,
-        error_details=all_error_details
+    logger.info(f"  Processing file - branch codes will be read from Branch column")
+    result = service.process_upload(
+        file_path=file_path,
+        branch_code=None,  # Not used - reads from file
+        employee_info=employee_info,
+        version_key=version_key  # ⭐ ส่ง key ไปบันทึกใน version_name
     )
+    
+    logger.info(
+        f"  Processing completed: successful={result.successful_updates}, errors={result.errors}"
+    )
+    
+    return result
 
 
 def archive_file(file_path: str, success: bool):

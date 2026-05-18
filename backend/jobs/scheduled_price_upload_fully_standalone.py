@@ -16,6 +16,7 @@ Usage:
 """
 
 import os
+import re
 import logging
 import pyodbc
 import json
@@ -149,13 +150,17 @@ class PriceUploadService:
         self.db_connection = db_connection
         self._branch_code = None
         self._employee_info = None
+        self._version_key = None  # ⭐ Key สำหรับบันทึกใน version_name
     
-    def process_upload(self, file_path: str, branch_code: str, employee_info: dict) -> UploadResult:
-        """Process price file and update Item_Price table"""
-        self._branch_code = branch_code
+    def process_upload(self, file_path: str, branch_code: Optional[str], employee_info: dict, version_key: Optional[str] = None) -> UploadResult:
+        """Process price file and update Item_Price table - reads Branch from file"""
+        self._branch_code = branch_code  # Legacy - not used
         self._employee_info = employee_info
+        self._version_key = version_key  # ⭐ เก็บ key
         
-        logger.info(f"Processing price upload: {file_path} for branch: {branch_code}")
+        logger.info(f"Processing price upload: {file_path}")
+        if version_key:
+            logger.info(f"Version key: {version_key}")
         
         # Parse Excel file
         try:
@@ -174,6 +179,18 @@ class PriceUploadService:
         
         if not sku_column:
             raise ValueError("SKU column not found")
+        
+        # ⭐ Find Branch column
+        branch_column = None
+        for col_name in ["Branch", "BranchCode", "Branch_Code", "สาขา"]:
+            if col_name in df.columns:
+                branch_column = col_name
+                break
+        
+        if not branch_column:
+            raise ValueError("Branch column not found - file must have Branch column")
+        
+        logger.info(f"Using SKU column: {sku_column}, Branch column: {branch_column}")
         
         # Create version log
         version_id = self._create_version_log(price_data, sku_column)
@@ -201,6 +218,19 @@ class PriceUploadService:
                     errors += 1
                     continue
                 
+                # ⭐ Get Branch from file
+                branch_value = row.get(branch_column, "")
+                if isinstance(branch_value, (int, float)):
+                    branch_code_from_file = str(branch_value).strip()
+                else:
+                    branch_code_from_file = str(branch_value).strip() if branch_value else ""
+                
+                # Skip empty Branch
+                if not branch_code_from_file or branch_code_from_file.lower() == 'nan':
+                    error_details.append(f"Row {idx}: SKU '{sku}' has empty Branch code")
+                    errors += 1
+                    continue
+                
                 # Validate SKU exists
                 if not self._sku_exists(sku):
                     error_details.append(f"Row {idx}: SKU '{sku}' not found")
@@ -220,7 +250,7 @@ class PriceUploadService:
                 
                 price_record = {
                     "SKU": sku,
-                    "BranchCode": self._branch_code,
+                    "BranchCode": branch_code_from_file,  # ⭐ Use branch from file
                     "SDM": self._parse_decimal(row.get("SDM")),
                     "R2": self._parse_decimal(row.get("R2")),
                     "R1": self._parse_decimal(row.get("R1")),
@@ -278,8 +308,12 @@ class PriceUploadService:
         """Create version log in Item_Update_Version"""
         cursor = self.db_connection.cursor()
         try:
-            now = datetime.now()
-            version_name = f"UPLOAD_{now.strftime('%Y%m%d_%H%M%S')}"
+            # ⭐ ใช้ key ถ้ามี, ไม่งั้น default
+            if self._version_key:
+                version_name = self._version_key
+            else:
+                now = datetime.now()
+                version_name = f"UPLOAD_{now.strftime('%Y%m%d_%H%M%S')}"
             
             # Detect categories
             categories = set()
@@ -419,10 +453,28 @@ class PriceUploadService:
 # BUSINESS LOGIC
 # =========================
 
+# ⭐ Filename key pattern: 1 letter (G/A/Y/S/C/E) + 4 digits, e.g. "G0001"
+_KEY_PATTERN = re.compile(r'_([GAYSCE]\d{4})$', re.IGNORECASE)
+
+
+def extract_version_key_from_filename(filename: str) -> Optional[str]:
+    """ดึง key (G0000) จากชื่อไฟล์ เช่น G18052569_G0001.xlsx → G0001"""
+    if not filename:
+        return None
+    name_without_ext = os.path.splitext(os.path.basename(filename))[0]
+    match = _KEY_PATTERN.search(name_without_ext)
+    if match:
+        return match.group(1).upper()
+    return None
+
+
 def parse_filename_date(filename: str) -> Optional[datetime]:
-    """Parse date from filename format: {Category}{DDMMYYYY}.xlsx"""
+    """Parse date from filename format: {Category}{DDMMYYYY}.xlsx or {Category}{DDMMYYYY}_{Key}.xlsx"""
     try:
         name_without_ext = os.path.splitext(filename)[0]
+        
+        # ⭐ ตัด suffix _G0000 ออกก่อนถ้ามี
+        name_without_ext = _KEY_PATTERN.sub('', name_without_ext)
         
         if len(name_without_ext) < 9:
             return None
@@ -465,49 +517,44 @@ def process_scheduled_file(file_path: str, conn: pyodbc.Connection) -> UploadRes
     
     metadata = load_metadata(file_path)
     
+    # ⭐ ดึง version_key จาก metadata ก่อน, ถ้าไม่มีก็ลอง parse จากชื่อไฟล์
+    version_key = None
+    if metadata:
+        version_key = metadata.get("version_key")
+    if not version_key:
+        version_key = extract_version_key_from_filename(file_path)
+    if version_key:
+        logger.info(f"Using version key: {version_key}")
+    else:
+        logger.warning(f"⚠️ No version key for {file_path}, will use default UPLOAD_... naming")
+    
     if not metadata:
-        branch_codes = ["00TR"]
         employee_info = {
             "employee_id": "system",
             "name": "Scheduled Upload System",
             "role": "SYSTEM"
         }
     else:
-        branch_codes = metadata.get("branch_codes", ["00TR"])
         employee_info = {
             "employee_id": metadata.get("uploaded_by", "system"),
             "name": metadata.get("uploaded_by_name", "Scheduled Upload System"),
             "role": "SYSTEM"
         }
     
+    # ⭐ Process once - branch codes are read from file
     service = PriceUploadService(conn)
     
-    total_rows = 0
-    total_successful = 0
-    total_errors = 0
-    all_error_details = []
-    
-    for branch in branch_codes:
-        logger.info(f"  Processing for branch: {branch}")
-        result = service.process_upload(
-            file_path=file_path,
-            branch_code=branch,
-            employee_info=employee_info
-        )
-        
-        total_rows += result.total_rows
-        total_successful += result.successful_updates
-        total_errors += result.errors
-        all_error_details.extend(result.error_details)
-        
-        logger.info(f"  Branch {branch}: successful={result.successful_updates}, errors={result.errors}")
-    
-    return UploadResult(
-        total_rows=total_rows,
-        successful_updates=total_successful,
-        errors=total_errors,
-        error_details=all_error_details
+    logger.info(f"  Processing file - branch codes will be read from Branch column")
+    result = service.process_upload(
+        file_path=file_path,
+        branch_code=None,  # Not used - reads from file
+        employee_info=employee_info,
+        version_key=version_key  # ⭐ ส่ง key ไปบันทึกใน version_name
     )
+    
+    logger.info(f"  Processing completed: successful={result.successful_updates}, errors={result.errors}")
+    
+    return result
 
 
 def archive_file(file_path: str, success: bool):

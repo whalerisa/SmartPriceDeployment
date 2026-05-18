@@ -16,7 +16,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Query as QueryPa
 from pydantic import BaseModel
 
 from config.db_mssql import get_mssql_conn
-from services.price_upload_service import PriceUploadService, ValidationError
+from services.price_upload_service import PriceUploadService, ValidationError, extract_version_key_from_filename
 from auth_dependency import get_employee_info
 
 
@@ -42,7 +42,7 @@ class UploadResponse(BaseModel):
 @router.post("/prices/upload", response_model=UploadResponse) #Upload Excel ราคา
 async def upload_prices(
     file: UploadFile = File(...),
-    branch_code: str = QueryParam(..., description="Branch code(s) for price data (comma-separated)"),
+    branch_code: Optional[str] = QueryParam(None, description="(Legacy) Branch code - now reads from file's Branch column"),
     employee_info: dict = Depends(get_employee_info)
 ):
     """
@@ -50,17 +50,17 @@ async def upload_prices(
     
     Process:
     1. Validate file format (CSV, XLSX, XLS)
-    2. Validate required columns (SKU, SDM, R2, R1, W2, W1)
-    3. For each branch code:
-       - For each row:
-         - Validate SKU exists in Item_Master
-         - Upsert to Item_Price table (update if exists, insert if not)
-         - Set UpdatedAt timestamp
+    2. Validate required columns (SKU, Branch, SDM, R2, R1, W2, W1)
+    3. For each row:
+       - Read BranchCode from Branch column in file
+       - Validate SKU exists in Item_Master
+       - Upsert to Item_Price table (update if exists, insert if not)
+       - Set UpdatedAt timestamp
     4. Return summary with total_rows, successful_updates, errors
     
     Args:
-        file: Uploaded file (CSV or Excel)
-        branch_code: Branch code(s) for price data (comma-separated, e.g., "00TR,05AY")
+        file: Uploaded file (CSV or Excel) with Branch column
+        branch_code: (Optional/Legacy) Not used - reads from file's Branch column
     
     Returns:
         UploadResponse with statistics and error details
@@ -69,15 +69,15 @@ async def upload_prices(
         HTTPException 400: When file format is invalid or required columns missing
         HTTPException 500: When database operation fails
     """
-    logger.info(f"Received price upload request for branches: {branch_code}")
+    logger.info(f"Received price upload request")
     logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')}), Role: {employee_info.get('role')}")
     
-    # Parse branch codes
-    branch_codes = [b.strip() for b in branch_code.split(",") if b.strip()]
-    if not branch_codes:
-        raise HTTPException(status_code=400, detail="No valid branch codes provided")
+    # Parse branch codes (legacy support - not used anymore)
+    if branch_code:
+        branch_codes = [b.strip() for b in branch_code.split(",") if b.strip()]
+        logger.info(f"Legacy branch_code parameter provided but will be ignored: {branch_codes}")
     
-    logger.info(f"Processing upload for {len(branch_codes)} branch(es): {branch_codes}")
+    logger.info(f"Processing upload - will read Branch codes from file")
     
     # Validate file extension
     if not file.filename:
@@ -89,6 +89,19 @@ async def upload_prices(
             status_code=400,
             detail=f"Unsupported file format: {file_ext}. Supported: .csv, .xlsx, .xls"
         )
+    
+    # ⭐ ดึง key จากชื่อไฟล์ (pattern: ..._G0001.xlsx)
+    version_key = extract_version_key_from_filename(file.filename)
+    if not version_key:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"รูปแบบชื่อไฟล์ไม่ถูกต้อง: '{file.filename}' "
+                f"ต้องลงท้ายด้วย key รูปแบบ _G0000 (ตัวอักษรประเภท + เลข 4 หลัก) "
+                f"เช่น Glass_690518_G0001.xlsx"
+            )
+        )
+    logger.info(f"Extracted version key from filename: {version_key}")
     
     # Save uploaded file to temporary location
     try:
@@ -103,47 +116,43 @@ async def upload_prices(
         logger.error(f"Failed to save uploaded file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
     
-    # Process upload for each branch
+    # Process upload
     try:
         conn = get_mssql_conn()
         service = PriceUploadService(conn)
         
-        total_rows = 0
-        total_successful = 0
-        total_errors = 0
-        all_error_details = []
+        # Process upload once - branch codes are read from file
+        logger.info(f"Processing upload from file")
+        result = service.process_upload(
+            file_path=temp_path,
+            branch_code=None,  # Not used - reads from file
+            employee_info=employee_info,  # ⭐ ส่งข้อมูล employee
+            version_key=version_key  # ⭐ ส่ง key จากชื่อไฟล์
+        )
         
-        for branch in branch_codes:
-            logger.info(f"Processing upload for branch: {branch}")
-            result = service.process_upload(
-                file_path=temp_path,
-                branch_code=branch,
-                employee_info=employee_info  # ⭐ ส่งข้อมูล employee
-            )
-            
-            total_rows += result.total_rows
-            total_successful += result.successful_updates
-            total_errors += result.errors
-            all_error_details.extend(result.error_details)
-            
-            logger.info(
-                f"Branch {branch}: successful={result.successful_updates}, errors={result.errors}"
-            )
+        total_rows = result.total_rows
+        total_successful = result.successful_updates
+        total_errors = result.errors
+        all_error_details = result.error_details
+        
+        logger.info(
+            f"Upload completed: successful={total_successful}, errors={total_errors}"
+        )
         
         conn.close()
         
         # Build response
         success = total_errors == 0
         message = (
-            f"Successfully uploaded {total_successful} prices across {len(branch_codes)} branch(es)"
+            f"Successfully uploaded {total_successful} prices"
             if success
-            else f"Uploaded {total_successful} prices with {total_errors} errors across {len(branch_codes)} branch(es)"
+            else f"Uploaded {total_successful} prices with {total_errors} errors"
         )
         
         logger.info(
             f"Price upload completed: success={success}, "
             f"total={total_rows}, successful={total_successful}, "
-            f"errors={total_errors}, branches={len(branch_codes)}"
+            f"errors={total_errors}"
         )
         
         return UploadResponse(
@@ -176,7 +185,7 @@ async def upload_prices(
 @router.post("/prices/schedule", response_model=UploadResponse) #Schedule Price Upload
 async def schedule_price_upload(
     file: UploadFile = File(...),
-    branch_code: str = QueryParam(..., description="Branch code(s) for price data (comma-separated)"),
+    branch_code: Optional[str] = QueryParam(None, description="(Legacy) Not used - reads from file's Branch column"),
     scheduled_date: str = QueryParam(..., description="Scheduled date in YYYY-MM-DD format"),
     employee_info: dict = Depends(get_employee_info)
 ):
@@ -186,13 +195,14 @@ async def schedule_price_upload(
     Process:
     1. Validate file format and scheduled date
     2. Detect category from file content (G, A, Y, S, C, E)
-    3. Save file with naming convention: {Category}{DDMMYYYY}.xlsx
+    3. Save file with naming convention: {Category}{DDMMYYYY}_{Key}.xlsx
     4. Store file in configured SCHEDULED_UPLOAD_FOLDER
     5. Standalone job will process files on scheduled date
+    6. Branch codes will be read from file's Branch column when processed
     
     Args:
-        file: Uploaded file (CSV or Excel)
-        branch_code: Branch code(s) for price data (comma-separated)
+        file: Uploaded file (CSV or Excel) with Branch column
+        branch_code: (Optional/Legacy) Not used - reads from file's Branch column
         scheduled_date: Date to upload (YYYY-MM-DD format)
     
     Returns:
@@ -206,7 +216,7 @@ async def schedule_price_upload(
     from datetime import datetime
     
     logger.info(f"Received scheduled price upload request")
-    logger.info(f"Scheduled date: {scheduled_date}, Branches: {branch_code}")
+    logger.info(f"Scheduled date: {scheduled_date}")
     logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')})")
     
     # Validate file extension
@@ -220,6 +230,19 @@ async def schedule_price_upload(
             detail=f"Unsupported file format: {file_ext}. Supported: .csv, .xlsx, .xls"
         )
     
+    # ⭐ ดึง key จากชื่อไฟล์ (pattern: ..._G0001.xlsx)
+    version_key = extract_version_key_from_filename(file.filename)
+    if not version_key:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"รูปแบบชื่อไฟล์ไม่ถูกต้อง: '{file.filename}' "
+                f"ต้องลงท้ายด้วย key รูปแบบ _G0000 (ตัวอักษรประเภท + เลข 4 หลัก) "
+                f"เช่น Glass_690518_G0001.xlsx"
+            )
+        )
+    logger.info(f"Extracted version key from filename: {version_key}")
+    
     # Validate scheduled date
     try:
         scheduled_dt = datetime.strptime(scheduled_date, "%Y-%m-%d")
@@ -228,10 +251,11 @@ async def schedule_price_upload(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
     
-    # Parse branch codes
-    branch_codes = [b.strip() for b in branch_code.split(",") if b.strip()]
-    if not branch_codes:
-        raise HTTPException(status_code=400, detail="No valid branch codes provided")
+    # Parse branch codes (legacy support - not used anymore, reads from file)
+    if branch_code:
+        logger.info(f"Legacy branch_code parameter provided but will be ignored: {branch_code}")
+    
+    logger.info(f"Branch codes will be read from file's Branch column when processed")
     
     # Save to temporary file first to read content
     try:
@@ -292,12 +316,13 @@ async def schedule_price_upload(
         logger.error(f"Failed to detect category: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
     
-    # Generate filename: {Category}{DDMMYYYY}.xlsx
+    # Generate filename: {Category}{DDMMYYYY}_{Key}.xlsx
     # Format date as DDMMYYYY (Buddhist year)
     day = scheduled_dt.strftime("%d")
     month = scheduled_dt.strftime("%m")
     year_buddhist = str(scheduled_dt.year + 543)  # Convert to Buddhist year
-    filename = f"{category}{day}{month}{year_buddhist}.xlsx"
+    # ⭐ แนบ key ไว้ที่ท้ายชื่อไฟล์ เพื่อให้ job อ่านได้แม้ไม่มี meta.json
+    filename = f"{category}{day}{month}{year_buddhist}_{version_key}.xlsx"
     
     # Get folder path from environment variable (set by config_router.py)
     scheduled_folder = os.getenv("PRICE_FILES_FOLDER", "./uploads/price_files")
@@ -330,12 +355,13 @@ async def schedule_price_upload(
         metadata = {
             "filename": filename,
             "scheduled_date": scheduled_date,
-            "branch_codes": branch_codes,
             "category": category,
+            "version_key": version_key,  # ⭐ บันทึก key ลง metadata เพื่อให้ job ใช้
             "uploaded_by": employee_info.get('employee_id'),
             "uploaded_by_name": employee_info.get('name'),
             "uploaded_at": datetime.now().isoformat(),
-            "status": "pending"
+            "status": "pending",
+            "note": "Branch codes will be read from file's Branch column"
         }
         
         metadata_path = final_path + ".meta.json"
