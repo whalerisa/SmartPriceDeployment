@@ -655,8 +655,8 @@ const ProjectPriceManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // ⭐ Validate project_code ในโหมด manual
-    if (projectCodeMode === 'manual' && !editingProjectId) {
+    // ⭐ Validate project_code ในโหมด manual (เฉพาะโหมดโครงการเท่านั้น)
+    if (projectCodeMode === 'manual' && priceMode === 'project' && !editingProjectId) {
       if (!formData.project_code || formData.project_code.trim() === '') {
         alert('กรุณากรอกรหัสโครงการ');
         return;
@@ -1452,25 +1452,6 @@ const ProjectPriceManagement = () => {
             ) : priceMode === 'customer' ? (
               // ฟอร์มสำหรับโหมดลูกค้าพิเศษ - มีชื่อแคมเปญแทนชื่อโครงการ
               <div className="grid grid-cols-3 gap-4">
-                {/* Project Code Input (Manual Mode Only) */}
-                {projectCodeMode === 'manual' && (
-                  <div className="col-span-3">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      รหัสโครงการ <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.project_code}
-                      onChange={(e) => setFormData({...formData, project_code: e.target.value.toUpperCase()})}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="กรอกรหัสโครงการ"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      💡 กรอกรหัสโครงการเอง (ระบบไม่สร้างอัตโนมัติ)
-                    </p>
-                  </div>
-                )}
                 
                 <div className="col-span-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1507,11 +1488,9 @@ const ProjectPriceManagement = () => {
                     className="w-full border rounded-lg px-3 py-2"
                     placeholder="เช่น 08015AY"
                   />
-                  {projectCodeMode === 'auto' && (
-                    <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 mt-1">
                       💡 รหัสโครงการจะถูกสร้างอัตโนมัติเมื่อบันทึก
                     </p>
-                  )}
                 </div>
                 
                 <div>
@@ -1546,8 +1525,8 @@ const ProjectPriceManagement = () => {
             ) : (
               // ฟอร์มสำหรับโหมดโครงการ/สาขา - มีชื่อโครงการ
               <>
-                {/* Project Code Input (Manual Mode Only) */}
-                {projectCodeMode === 'manual' && (
+                {/* Project Code Input (Manual Mode Only) - เฉพาะโหมดโครงการเท่านั้น */}
+                {projectCodeMode === 'manual' && priceMode === 'project' && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       รหัสโครงการ <span className="text-red-500">*</span>
@@ -1578,7 +1557,7 @@ const ProjectPriceManagement = () => {
                     className="w-full border rounded-lg px-3 py-2"
                     placeholder="เช่น โครงการคอนโดXXX"
                   />
-                  {projectCodeMode === 'auto' && (
+                  {(projectCodeMode === 'auto' || priceMode === 'branch') && (
                     <p className="text-xs text-gray-500 mt-1">
                       💡 รหัสโครงการจะถูกสร้างอัตโนมัติเมื่อบันทึก
                     </p>

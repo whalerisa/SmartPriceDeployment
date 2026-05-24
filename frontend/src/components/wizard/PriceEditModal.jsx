@@ -6,7 +6,10 @@ function roundUp050(x) {
   if (x < 1) {
     return Math.round(x * 100) / 100;
   }
-  return Math.ceil(x * 2) / 2;
+  // ⭐ FIX: ใช้ epsilon เพื่อจัดการ floating-point precision error
+  // ป้องกันกรณี 478.00000000000006 ถูกปัดเป็น 478.50
+  const epsilon = 1e-9;
+  return Math.ceil((x - epsilon) * 2) / 2;
 }
 
 export default function PriceEditModal({ item, calculatedItem, onClose, onSave, hasPromotion = false }) {

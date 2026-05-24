@@ -125,10 +125,12 @@ async def create_project_price(project: ProjectPriceCreate, authorization: str =
         print(f"🏗️ [CREATE PROJECT PRICE] Mode: {mode}, Employee Branch: {employee_branch}, Selected Branch: {project.branch_code}")
         
         # ⭐ ตรวจสอบว่าเป็น manual mode หรือไม่
+        # ⭐ project_code_mode มีผลเฉพาะโหมด 'project' เท่านั้น
+        # โหมด 'branch' และ 'customer' ใช้ running number เสมอ
         project_code_mode = os.getenv("PROJECT_CODE_MODE", "auto")
         
-        if project_code_mode == "manual" and project.project_code:
-            # Manual mode: ใช้ project_code ที่ผู้ใช้กรอกมา
+        if project_code_mode == "manual" and mode == "project" and project.project_code:
+            # Manual mode: ใช้ project_code ที่ผู้ใช้กรอกมา (เฉพาะโหมดโครงการ)
             generated_code = project.project_code.strip()
             
             # ตรวจสอบว่า project_code ซ้ำหรือไม่

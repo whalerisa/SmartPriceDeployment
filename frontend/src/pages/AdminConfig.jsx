@@ -529,7 +529,7 @@ function AdminConfig() {
                   <div className="border border-gray-300 rounded-lg p-4 bg-gray-50 mb-4">
                     <div className="mb-4">
                       <h4 className="font-semibold text-gray-900">🔢 รูปแบบ Project Code</h4>
-                      <p className="text-xs text-gray-500">เลือกวิธีการสร้าง Project Code</p>
+                      <p className="text-xs text-gray-500">เลือกวิธีการสร้าง Project Code (มีผลเฉพาะโหมด "โครงการ" เท่านั้น โหมดสาขาและลูกค้าพิเศษจะใช้ Running Number เสมอ)</p>
                     </div>
                     <div className="space-y-3">
                       <label className="flex items-start gap-3 cursor-pointer">

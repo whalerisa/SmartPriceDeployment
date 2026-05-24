@@ -316,7 +316,7 @@ export default function CartItemRow({ item, index, calculatedItem, dispatch, cus
                 className="font-semibold cursor-pointer hover:underline text-blue-700 text-center"
                 onClick={() => setShowPriceModal(true)}
               >
-                {Number(displayUnitPrice).toLocaleString("th-TH")}
+                {Number(displayUnitPrice).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
               
               {/* ⭐ แสดงว่าเป็นโปรโมชั่น */}
@@ -364,7 +364,7 @@ export default function CartItemRow({ item, index, calculatedItem, dispatch, cus
 
 
         <td className="px-2 text-sm py-3 font-semibold text-center ">
-          {Number(displayLineTotal).toLocaleString("th-TH")}
+          {Number(displayLineTotal).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </td>
 
         <td className="text-start w-[60px] ">

@@ -30,6 +30,7 @@ from product_image_router import router as product_image_router
 from project_files_router import router as project_files_router
 from statistics_router import router as statistics_router
 from external_price_api_router import router as external_price_api_router
+from d365_quote_api_router import router as d365_quote_api_router
 
 
 from config.config_external_api import CUSTOMER_API_KEY
@@ -139,6 +140,7 @@ app.include_router(product_image_router)  # Product image management
 app.include_router(project_files_router)  # Project files management
 app.include_router(statistics_router)  # Statistics management
 app.include_router(external_price_api_router, prefix="/api")  # External price API
+app.include_router(d365_quote_api_router)  # D365 Sales Quote API (future direct integration)
 
 
 

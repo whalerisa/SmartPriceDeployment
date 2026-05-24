@@ -67,7 +67,10 @@ def _safe_print_df(df, cols, title):
 def round_up_050(x: float) -> float:
     if x < 1:
         return round(x, 2)
-    return math.ceil(x * 2) / 2
+    # ⭐ FIX: ใช้ epsilon เพื่อจัดการ floating-point precision error
+    # ป้องกันกรณี 478.00000000000006 ถูกปัดเป็น 478.50
+    epsilon = 1e-9
+    return math.ceil((x - epsilon) * 2) / 2
 
 
 def _compute_unit_price_helper(row, is_project_price=False):
@@ -96,12 +99,22 @@ def _compute_unit_price_helper(row, is_project_price=False):
 def _compute_line_total_helper(row):
     """Helper function to compute line total with rounding based on category"""
     category = str(row.get("category", "")).upper()
-    line_total = row["UnitPrice"] * row["Quantity"]
+    is_sold_by_pack = bool(row.get("isSoldByPack", False))
     
     if category == "A":
-        return line_total  # อลูมิเนียมไม่ปัดเศษ
+        # อลูมิเนียม: UnitPrice × Quantity (ไม่ปัดเศษ)
+        return row["UnitPrice"] * row["Quantity"]
+    elif category == "G" and not is_sold_by_pack:
+        # ⭐ กระจก (ไม่ใช่ขายยกแพ็ก): คำนวณจากราคาต่อแผ่นที่ปัดแล้ว × จำนวนแผ่น
+        # เพื่อให้ตัวเลข LineTotal สอดคล้องกับ price_per_sheet ที่แสดง
+        # ป้องกันกรณี: ราคา/แผ่น 478.00 × 2 แผ่น แต่ LineTotal = 955.50 (ไม่ตรง)
+        sqft_sheet = float(row.get("Sqft_Sheet", 0) or 0)
+        pieces = float(row.get("Pieces", row["Quantity"]) or 0)
+        price_per_sheet = round_up_050(row["UnitPrice"] * sqft_sheet)
+        return price_per_sheet * pieces
     else:
-        return round_up_050(line_total)
+        # อื่นๆ: UnitPrice × Quantity แล้วปัด
+        return round_up_050(row["UnitPrice"] * row["Quantity"])
 
 
 def get_vat_rate() -> float:

@@ -128,12 +128,13 @@ async def search_customer_from_db(
         
         base["creditTerm"] = base["payment_terms"]
         
-        base["sales_g"] = base["sales_g_cust"]
-        base["sales_a"] = base["sales_a_cust"]
-        base["sales_s"] = base["sales_s_cust"]
-        base["sales_y"] = base["sales_y_cust"]
-        base["sales_c"] = base["sales_c_cust"]
-        base["sales_e"] = base["sales_e_cust"]
+        # ⚠️ DEPRECATED: Duplicate data - use sales_*_cust instead
+        # base["sales_g"] = base["sales_g_cust"]
+        # base["sales_a"] = base["sales_a_cust"]
+        # base["sales_s"] = base["sales_s_cust"]
+        # base["sales_y"] = base["sales_y_cust"]
+        # base["sales_c"] = base["sales_c_cust"]
+        # base["sales_e"] = base["sales_e_cust"]
         
         base["relevantSales"] = relevant_sales
         
@@ -253,12 +254,12 @@ async def search_customer(
                 "sales_e_cust": 0,
                 "price_level": 0,
                 "creditTerm": "",
-                "sales_g": 0,
-                "sales_a": 0,
-                "sales_s": 0,
-                "sales_y": 0,
-                "sales_c": 0,
-                "sales_e": 0,
+                # "sales_g": 0,
+                # "sales_a": 0,
+                # "sales_s": 0,
+                # "sales_y": 0,
+                # "sales_c": 0,
+                # "sales_e": 0,
                 "relevantSales": 0,
                 "tier": "Unknown",
                 "credit_terms": {},
@@ -288,7 +289,7 @@ def search_customer_list_from_db(query: str) -> list:
         # Normalize phone query
         q_phone = "".join(ch for ch in query if ch.isdigit())
         
-        # ⭐ ตรวจสอบว่ามี Full-Text Index หรือไม่
+        #ตรวจสอบว่ามี Full-Text Index หรือไม่
         cursor.execute("""
             SELECT COUNT(*) as has_fulltext
             FROM sys.fulltext_indexes 
@@ -485,7 +486,7 @@ def search_customer_list(
     Returns:
         List of customers (max 15 results)
     """
-    # ใช้ MSSQL Database เท่านั้น
+
     return search_customer_list_from_db(q)
 
 
