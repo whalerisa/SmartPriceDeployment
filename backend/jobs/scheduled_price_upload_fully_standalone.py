@@ -41,7 +41,7 @@ MSSQL_CONFIG = {
 }
 
 # ⭐ Scheduled Upload Folder (แก้ไขตรงนี้)
-SCHEDULED_FOLDER = r"C:\Users\kongd\Desktop\SP681\UploadsPrice"
+SCHEDULED_FOLDER = r"/mnt/c/Users/kongd/Desktop/SP681/UploadsPrice"
 
 # ⭐ Log Configuration
 LOG_FILE = "scheduled_price_upload.log"
@@ -432,15 +432,17 @@ class PriceUploadService:
                     new_R1, new_R2, new_W1, new_W2,
                     old_R1, old_R2, old_W1, old_W2,
                     new_alternate_name, old_alternate_name,
-                    change_price_flag, change_altname_flag
+                    change_price_flag, change_altname_flag,
+                    BranchCode
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 detail_id, version_id, sku, new_alternate_name,
                 new_R1, new_R2, new_W1, new_W2,
                 old_R1, old_R2, old_W1, old_W2,
                 new_alternate_name, old_alternate_name,
-                change_price_flag, change_altname_flag
+                change_price_flag, change_altname_flag,
+                branch_code
             ))
             
             if auto_commit:

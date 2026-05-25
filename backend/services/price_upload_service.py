@@ -136,8 +136,8 @@ class PriceUploadService:
             ValidationError: When file format is invalid or required columns missing
         """
         self._branch_code = branch_code  # Legacy - not used anymore
-        self._employee_info = employee_info  # ⭐ เก็บข้อมูล employee
-        self._version_key = version_key  # ⭐ เก็บ version key
+        self._employee_info = employee_info  # เก็บข้อมูล employee
+        self._version_key = version_key  # เก็บ version key
         logger.info(f"Processing price upload: {file_path}")
         logger.info(f"Uploaded by: {employee_info.get('employee_id')} ({employee_info.get('name')})")
         if version_key:
@@ -532,7 +532,7 @@ class PriceUploadService:
         try:
             branch_code = price_data["BranchCode"]
             
-            # ⭐ ดึงราคาเก่าก่อน update
+            # ดึงราคาเก่าก่อน update
             cursor.execute("""
                 SELECT R1, R2, W1, W2, AlternateName
                 FROM Item_Price WITH (NOLOCK)
@@ -626,7 +626,7 @@ class PriceUploadService:
                 )
                 logger.debug(f"Inserted new price for SKU: {sku}, Branch: {branch_code}")
             
-            # ⭐ บันทึก detail log
+            # บันทึก detail log
             # หา id ถัดไป (MAX + 1)
             cursor.execute("SELECT ISNULL(MAX(id), 0) + 1 FROM Item_Update_Version_Detail")
             detail_id = int(cursor.fetchone()[0])
@@ -637,9 +637,10 @@ class PriceUploadService:
                     new_R1, new_R2, new_W1, new_W2,
                     old_R1, old_R2, old_W1, old_W2,
                     new_alternate_name, old_alternate_name,
-                    change_price_flag, change_altname_flag
+                    change_price_flag, change_altname_flag,
+                    BranchCode
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 detail_id,
                 version_id,
@@ -650,7 +651,8 @@ class PriceUploadService:
                 new_alternate_name,
                 old_alternate_name,
                 change_price_flag,
-                change_altname_flag
+                change_altname_flag,
+                branch_code
             ))
             
             # ⭐ Commit เฉพาะเมื่อ auto_commit = True

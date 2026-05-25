@@ -298,9 +298,10 @@ def upsert_price_record(conn, price_data: PriceData, version_id: int) -> tuple[b
                 new_R1, new_R2, new_W1, new_W2,
                 old_R1, old_R2, old_W1, old_W2,
                 new_alternate_name, old_alternate_name,
-                change_price_flag, change_altname_flag
+                change_price_flag, change_altname_flag,
+                BranchCode
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             detail_id,
             version_id,
@@ -311,7 +312,8 @@ def upsert_price_record(conn, price_data: PriceData, version_id: int) -> tuple[b
             new_alternate_name,
             old_alternate_name,
             change_price_flag,
-            change_altname_flag
+            change_altname_flag,
+            branch_code
         ))
         
         return True, ""
