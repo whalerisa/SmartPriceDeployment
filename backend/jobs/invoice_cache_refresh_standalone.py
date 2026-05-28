@@ -46,6 +46,7 @@ Install with:
 
 import os
 import sys
+import time
 import logging
 import pyodbc
 import requests
@@ -125,6 +126,8 @@ DEFAULT_INVOICE_API_KEY = "eyJ4NXQjUzI1NiI6Ik16QXpNVEZqT0RRMU1ETmpPVFUxWkRBNE5HU
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
 API_PAGE_SIZE = int(os.getenv("API_PAGE_SIZE", "5000"))
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "120"))
+API_MAX_RETRIES = int(os.getenv("API_MAX_RETRIES", "3"))       # จำนวนครั้ง retry สูงสุด
+API_RETRY_DELAY = int(os.getenv("API_RETRY_DELAY", "10"))      # รอกี่วินาทีก่อน retry
 
 
 def get_mssql_conn():
@@ -210,35 +213,66 @@ def load_all_invoices_from_d365(start_date: date, end_date: date) -> List[Dict]:
             "size": API_PAGE_SIZE,
             "Posting Date": {"$gte": date_from, "$lte": date_to}
         }
-        
-        try:
-            resp = requests.post(
-                invoice_api_url,
-                json=payload,
-                headers=headers,
-                timeout=API_TIMEOUT,
-            )
-            resp.raise_for_status()
-            
-            data = resp.json()
-            items = data.get("data") or []
-            
-            if not items:
-                logger.info(f"  ✓ page={page}: No more data")
-                break
-            
-            rows.extend(items)
-            logger.info(f"  ✓ page={page}: Loaded {len(items)} invoices (total: {len(rows)})")
-            
-            if len(items) < API_PAGE_SIZE:
-                logger.info("  ✓ Completed (last page)")
-                break
-            
-            page += 1
-            
-        except Exception as e:
-            logger.error(f"  ❌ Error on page={page}: {e}")
+
+        # ⭐ Retry loop สำหรับแต่ละ page
+        retry = 0
+        success = False
+        while retry <= API_MAX_RETRIES:
+            try:
+                if retry > 0:
+                    wait = API_RETRY_DELAY * retry  # backoff: 10s, 20s, 30s
+                    logger.warning(f"  🔄 Retry {retry}/{API_MAX_RETRIES} for page={page} (waiting {wait}s...)")
+                    time.sleep(wait)
+
+                resp = requests.post(
+                    invoice_api_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=API_TIMEOUT,
+                )
+                resp.raise_for_status()
+
+                data = resp.json()
+                items = data.get("data") or []
+
+                if not items:
+                    logger.info(f"  ✓ page={page}: No more data")
+                    return rows  # ออกจาก function เลย
+
+                rows.extend(items)
+                logger.info(f"  ✓ page={page}: Loaded {len(items)} invoices (total: {len(rows)})")
+
+                if len(items) < API_PAGE_SIZE:
+                    logger.info("  ✓ Completed (last page)")
+                    return rows  # ออกจาก function เลย
+
+                success = True
+                break  # page นี้สำเร็จ ออกจาก retry loop
+
+            except requests.exceptions.Timeout as e:
+                logger.error(f"  ❌ TIMEOUT on page={page}, retry={retry}/{API_MAX_RETRIES} (timeout={API_TIMEOUT}s): {e}")
+                logger.error(f"  ⚠️ Partial data collected so far: {len(rows)} records")
+                retry += 1
+
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"  ❌ CONNECTION ERROR on page={page}, retry={retry}/{API_MAX_RETRIES}: {e}")
+                retry += 1
+
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"  ❌ HTTP ERROR on page={page}: status={resp.status_code}, detail={e}")
+                logger.error("  ⛔ HTTP error — ไม่ retry")
+                logger.info(f"📊 Total invoices loaded (partial): {len(rows)}")
+                return rows  # HTTP error ไม่ retry ออกเลย
+
+            except Exception as e:
+                logger.error(f"  ❌ Unexpected error on page={page}, retry={retry}/{API_MAX_RETRIES}: {type(e).__name__}: {e}")
+                retry += 1
+
+        if not success:
+            logger.error(f"  ⛔ page={page} failed after {API_MAX_RETRIES} retries — หยุดดึงข้อมูล")
             break
+
+        page += 1
     
     logger.info(f"📊 Total invoices loaded: {len(rows)}")
     return rows
@@ -387,31 +421,73 @@ def upsert_invoice_batch(invoices: List[InvoiceCacheRecord], conn: pyodbc.Connec
         for invoice in invoices
     ]
     
-    try:
-        # ใช้ executemany แทน execute (เร็วกว่ามาก!)
-        cursor.fast_executemany = True  # เปิด fast mode
-        cursor.executemany(merge_sql, params)
-        conn.commit()
-        success_count = len(invoices)
-        logger.info(f"  ✅ Batch inserted/updated {success_count} invoices")
-    except Exception as e:
-        logger.error(f"  ❌ Batch operation failed: {e}")
-        logger.info("  🔄 Falling back to row-by-row insert...")
-        
-        # Fallback: ถ้า executemany fail ให้ทำทีละแถว
-        conn.rollback()
-        cursor.fast_executemany = False
-        
-        success_count = 0
-        for param in params:
+    DB_MAX_RETRIES = int(os.getenv("DB_MAX_RETRIES", "3"))
+    DB_RETRY_DELAY = int(os.getenv("DB_RETRY_DELAY", "5"))
+
+    # ── Phase 1: executemany (fast) with retry ──────────────────────────────
+    batch_success = False
+    for attempt in range(1, DB_MAX_RETRIES + 1):
+        try:
+            cursor.fast_executemany = True
+            cursor.executemany(merge_sql, params)
+            conn.commit()
+            success_count = len(invoices)
+            logger.info(f"  ✅ Batch inserted/updated {success_count} invoices")
+            batch_success = True
+            break
+        except Exception as e:
+            conn.rollback()
+            if attempt < DB_MAX_RETRIES:
+                wait = DB_RETRY_DELAY * attempt  # backoff: 5s, 10s, 15s
+                logger.warning(
+                    f"  ⚠️ Batch attempt {attempt}/{DB_MAX_RETRIES} failed: {e} "
+                    f"— retrying in {wait}s..."
+                )
+                time.sleep(wait)
+            else:
+                logger.error(
+                    f"  ❌ Batch failed after {DB_MAX_RETRIES} attempts: {e}"
+                )
+
+    if batch_success:
+        cursor.close()
+        return success_count
+
+    # ── Phase 2: fallback row-by-row with retry ─────────────────────────────
+    logger.info("  🔄 Falling back to row-by-row insert with retry...")
+    cursor.fast_executemany = False
+    success_count = 0
+
+    for param in params:
+        doc_no = param[0]
+        row_saved = False
+
+        for attempt in range(1, DB_MAX_RETRIES + 1):
             try:
                 cursor.execute(merge_sql, param)
                 success_count += 1
+                row_saved = True
+                break
             except Exception as row_e:
-                logger.error(f"  ❌ Failed to upsert invoice {param[0]}: {row_e}")
-        
-        conn.commit()
-    
+                conn.rollback()
+                if attempt < DB_MAX_RETRIES:
+                    wait = DB_RETRY_DELAY * attempt
+                    logger.warning(
+                        f"  ⚠️ Row {doc_no} attempt {attempt}/{DB_MAX_RETRIES} failed: {row_e} "
+                        f"— retrying in {wait}s..."
+                    )
+                    time.sleep(wait)
+                else:
+                    logger.error(
+                        f"  ❌ Row {doc_no} failed after {DB_MAX_RETRIES} attempts: {row_e}"
+                    )
+
+        if not row_saved:
+            logger.error(f"  ⛔ Skipping invoice {doc_no} — could not save after all retries")
+
+    conn.commit()
+    logger.info(f"  ✅ Row-by-row completed: {success_count}/{len(params)} saved")
+
     cursor.close()
     return success_count
 
@@ -447,9 +523,9 @@ def run_invoice_cache_refresh(months: int = 6) -> InvoiceJobResult:
     )
     
     try:
-        # คำนวณช่วงวันที่
+        # คำนวณช่วงวันที่ (ใช้ relativedelta นับเดือนที่แม่นยำ)
         end_date = calculation_date
-        start_date = calculation_date - timedelta(days=months * 31)
+        start_date = calculation_date - relativedelta(months=months)
         
         # ดึงข้อมูล invoice
         invoices_data = load_all_invoices_from_d365(start_date, end_date)

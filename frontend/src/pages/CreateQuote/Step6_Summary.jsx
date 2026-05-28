@@ -1667,7 +1667,9 @@ function Step6_Summary({ state, dispatch }) {
 
   const handleConfirmDynamicsImport = () => {
     setShowDynamicsConfirm(false);
-    handleSendToBC();
+    setTimeout(() => {
+      handleSendToBC();
+    }, 2000);
   };
 
   const handleSpecialPriceRequest = async (reason, validFrom, validTo) => {
