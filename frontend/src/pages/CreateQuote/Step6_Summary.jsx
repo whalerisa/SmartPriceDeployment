@@ -2296,9 +2296,8 @@ function Step6_Summary({ state, dispatch }) {
                               staffCount: state.staffCount,
                             },
                           });
-                          // ⭐ เปิด Modal ขอเหตุผลทันทีเมื่อกดบันทึกค่าขนส่ง
                           setEditingShippingCost(false);
-                          setShowPriceEditReasonModal(true);
+                          setShippingEdited(true);
                         }}
                         className="px-2 py-1 text-xs font-semibold text-white bg-green-600 rounded hover:bg-green-700"
                       >

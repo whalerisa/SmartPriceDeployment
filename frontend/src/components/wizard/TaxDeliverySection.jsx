@@ -152,7 +152,7 @@ function TaxDeliverySection({
               onClick={() => update({ deliveryType: "PICKUP" })}
             />
           </div>
-
+             {/*
           {deliveryType === "DELIVERY" && (
             <div className="mt-3">
               <button
@@ -162,7 +162,7 @@ function TaxDeliverySection({
                 คำนวณค่าขนส่ง
               </button>
             </div>
-          )}
+          )} */}  
 
           {/* Dropdown เลือกสาขา (ส่งระหว่างสาขา) */}
           <div className="mt-2 w-48">
