@@ -500,22 +500,33 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                     qty = float(row.get("Pieces", row.get("Quantity", 0)))
                     unit = str(row.get("unit", ""))
                     sku = row.get("sku", "")
+                    category = str(row.get("category", "")).upper()
+                    
+                    # ⭐ อลูมิเนียม: ราคา threshold เป็นต่อกิโล → ใช้ pricePerKg เปรียบเทียบ
+                    if category == "A":
+                        compare_price = float(row.get("_manual_pricePerKg") or 0)
+                        if compare_price <= 0:
+                            # fallback: คำนวณจาก manual_price / weight
+                            weight = float(row.get("_manual_weight") or row.get("product_weight") or 0)
+                            compare_price = manual_price / weight if weight > 0 else manual_price
+                    else:
+                        compare_price = manual_price
                     
                     # ตรวจสอบว่าต้องขออนุมัติหรือไม่
                     requires_approval = False
                     approval_level = "OK"
                     
                     if r1_price > 0:  # มีข้อมูล threshold
-                        if sdm_price > 0 and manual_price < sdm_price:
+                        if sdm_price > 0 and compare_price < sdm_price:
                             requires_approval = True
                             approval_level = "PM_APPROVAL"
-                        elif w1_price > 0 and manual_price < w1_price:
+                        elif w1_price > 0 and compare_price < w1_price:
                             requires_approval = True
                             approval_level = "SDM_APPROVAL"
-                        elif w2_price > 0 and manual_price < w2_price:
+                        elif w2_price > 0 and compare_price < w2_price:
                             requires_approval = True
                             approval_level = "ZM_THEN_RM"
-                        elif manual_price < r1_price:
+                        elif compare_price < r1_price:
                             requires_approval = True
                             approval_level = "ZM_ONLY"
                         
@@ -525,15 +536,15 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                                 "name": row.get("name", ""),
                                 "qty": float(qty),
                                 "unit": unit,
-                                "category": str(row.get("category", "")).upper(),
-                                "requested_price": float(manual_price),
+                                "category": category,
+                                "requested_price": float(compare_price),
                                 "r1_price": float(r1_price),
                                 "w2_price": float(w2_price),
                                 "w1_price": float(w1_price),
                                 "sdm_price": float(sdm_price),
                                 "requires_approval": True,
                                 "approval_level": approval_level,
-                                "is_below_r1": manual_price < r1_price
+                                "is_below_r1": compare_price < r1_price
                             })
 
         # ⭐ คำนวณ LineTotal (ปัดเศษ ยกเว้นอลูมิเนียม)
@@ -889,28 +900,40 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                 sdm_price = float(row.get("priceSDM", 0))
                 qty = float(row.get("Pieces", row.get("Quantity", 0)))
                 unit = str(row.get("unit", ""))
+                category = str(row.get("category", "")).upper()
+                
+                # ⭐ อลูมิเนียม: ราคา threshold เป็นต่อกิโล → ใช้ pricePerKg เปรียบเทียบ
+                if category == "A":
+                    compare_price = float(row.get("_manual_pricePerKg") or 0)
+                    if compare_price <= 0:
+                        # fallback: คำนวณจาก manual_price / weight
+                        weight = float(row.get("_manual_weight") or row.get("product_weight") or 0)
+                        compare_price = manual_price / weight if weight > 0 else manual_price
+                else:
+                    compare_price = manual_price
                 
                 print(f"   📊 Price Thresholds:")
                 print(f"      R1: {r1_price}")
                 print(f"      W2: {w2_price}")
                 print(f"      W1: {w1_price}")
                 print(f"      SDM: {sdm_price}")
+                print(f"   🔢 Compare Price (per kg for Alu): {compare_price}")
                 
                 # ตรวจสอบว่าต้องขออนุมัติหรือไม่
                 requires_approval = False
                 approval_level = "OK"
                 
                 if r1_price > 0:  # มีข้อมูล threshold (ไม่ต้องเช็ค sdm_price เพราะอาจเป็น 0)
-                    if sdm_price > 0 and manual_price < sdm_price:
+                    if sdm_price > 0 and compare_price < sdm_price:
                         requires_approval = True
                         approval_level = "PM_APPROVAL"
-                    elif w1_price > 0 and manual_price < w1_price:
+                    elif w1_price > 0 and compare_price < w1_price:
                         requires_approval = True
                         approval_level = "SDM_APPROVAL"
-                    elif w2_price > 0 and manual_price < w2_price:
+                    elif w2_price > 0 and compare_price < w2_price:
                         requires_approval = True
                         approval_level = "ZM_THEN_RM"
-                    elif manual_price < r1_price:
+                    elif compare_price < r1_price:
                         requires_approval = True
                         approval_level = "ZM_ONLY"
                     
@@ -923,15 +946,15 @@ async def calculate_pricing(req: PricingRequest = Body(...), branch_code: str = 
                             "name": row.get("name", ""),
                             "qty": float(qty),
                             "unit": unit,
-                            "category": str(row.get("category", "")).upper(),
-                            "requested_price": float(manual_price),
+                            "category": category,
+                            "requested_price": float(compare_price),
                             "r1_price": float(r1_price),
                             "w2_price": float(w2_price),
                             "w1_price": float(w1_price),
                             "sdm_price": float(sdm_price),
                             "requires_approval": True,
                             "approval_level": approval_level,
-                            "is_below_r1": manual_price < r1_price
+                            "is_below_r1": compare_price < r1_price
                         })
                         print(f"   ➕ Added to price_validations")
                     else:
