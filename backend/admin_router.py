@@ -13,6 +13,7 @@ import tempfile
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query as QueryParam, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from config.db_mssql import get_mssql_conn
@@ -37,6 +38,85 @@ class UploadResponse(BaseModel):
     successful_updates: int
     errors: int
     error_details: list[str]
+
+
+@router.post("/prices/upload/stream")  # ⭐ Streaming upload พร้อม progress
+async def upload_prices_stream(
+    file: UploadFile = File(...),
+    branch_code: Optional[str] = QueryParam(None),
+    employee_info: dict = Depends(get_employee_info),
+):
+    """
+    Upload price file พร้อม real-time progress via Server-Sent Events (SSE).
+    
+    Client รับ stream ของ events ในรูปแบบ:
+        data: {"step": "...", "pct": 0-100, "message": "...", ...}
+    
+    เมื่อ step == "done" หรือ "error" แสดงว่าจบแล้ว
+    """
+    logger.info(f"Received streaming price upload request")
+
+    # Validate filename
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in [".csv", ".xlsx", ".xls"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_ext}")
+
+    version_key = extract_version_key_from_filename(file.filename)
+    if not version_key:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"รูปแบบชื่อไฟล์ไม่ถูกต้อง: '{file.filename}' "
+                f"ต้องลงท้ายด้วย key รูปแบบ _G0000 เช่น Glass_690518_G0001.xlsx"
+            ),
+        )
+
+    # Save to temp file
+    import tempfile
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
+            temp_path = tmp.name
+            tmp.write(await file.read())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+
+    def generate():
+        try:
+            conn = get_mssql_conn()
+            service = PriceUploadService(conn)
+            for event in service.process_upload_stream(
+                file_path=temp_path,
+                branch_code=None,
+                employee_info=employee_info,
+                version_key=version_key,
+            ):
+                yield event
+            conn.close()
+        except ValidationError as e:
+            import json
+            yield f"data: {json.dumps({'step': 'error', 'pct': 0, 'message': str(e)})}\n\n"
+        except Exception as e:
+            import json
+            logger.error(f"Streaming upload failed: {e}", exc_info=True)
+            yield f"data: {json.dumps({'step': 'error', 'pct': 0, 'message': str(e)})}\n\n"
+        finally:
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable Nginx buffering
+        },
+    )
 
 
 @router.post("/prices/upload", response_model=UploadResponse) #Upload Excel ราคา

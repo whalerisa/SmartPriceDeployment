@@ -10,6 +10,7 @@ python-dotenv
 pyjwt
 scipy
 openpyxl
+python-calamine
 annotated-types
 requests
 httpx

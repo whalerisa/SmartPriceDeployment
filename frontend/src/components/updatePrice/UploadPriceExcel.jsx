@@ -1,30 +1,25 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import api from "../../services/api";
 
 export default function UploadPriceExcel({ onUploaded }) {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [scheduledDate, setScheduledDate] = useState(""); // วันที่ต้องการให้อัปโหลด
-  const [uploadMode, setUploadMode] = useState(""); // "" | "immediate" | "scheduled" - เริ่มต้นไม่เลือก
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [uploadMode, setUploadMode] = useState("");
 
-  // No need to fetch regions and branches anymore since we read from file
+  // ⭐ Progress state สำหรับ immediate upload
+  const [progress, setProgress] = useState(null);
+  // progress: null | { pct: number, message: string, step: string }
 
   const handleUpload = async () => {
     if (!file || !uploadMode) return;
 
-    // ⭐ ตรวจสอบว่าเลือกโหมดการอัปโหลดหรือยัง
-    if (!uploadMode) {
-      alert("❌ กรุณาเลือกโหมดการอัปโหลด");
-      return;
-    }
-
-    // ⭐ ตรวจสอบว่าเลือก scheduled แต่ไม่ได้เลือกวันที่
     if (uploadMode === "scheduled" && !scheduledDate) {
       alert("❌ กรุณาเลือกวันที่ต้องการอัปโหลด");
       return;
     }
 
-    // ⭐ ตรวจสอบ pattern ชื่อไฟล์: ต้องลงท้ายด้วย _G0000 (ตัวอักษรประเภท + เลข 4 หลัก)
+    // ⭐ ตรวจสอบ pattern ชื่อไฟล์
     const filenameKeyPattern = /_[GAYSCE]\d{4}\.(xlsx|xls|csv)$/i;
     if (!filenameKeyPattern.test(file.name)) {
       alert(
@@ -45,56 +40,110 @@ export default function UploadPriceExcel({ onUploaded }) {
     }
 
     setLoading(true);
+    setProgress({ pct: 0, message: "กำลังเตรียมไฟล์...", step: "start" });
+
     try {
       const form = new FormData();
       form.append("file", file);
 
-      // ⭐ เลือก endpoint ตามโหมด (ไม่ต้องส่ง branch_code แล้ว)
-      let endpoint;
       if (uploadMode === "immediate") {
-        endpoint = `/api/admin/prices/upload`;
+        // ⭐ ใช้ streaming endpoint
+        await handleStreamingUpload(form);
       } else {
-        // Scheduled upload - still needs branch_code for scheduled jobs
-        endpoint = `/api/admin/prices/schedule?scheduled_date=${scheduledDate}`;
-      }
-      
-      const res = await api.post(endpoint, form);
-      
-      // ⭐ แสดงข้อความสำเร็จ
-      if (uploadMode === "immediate") {
-        let message = `✅ อัปโหลดเสร็จสิ้น!\n\n`;
-        message += `อัปเดตราคาสำเร็จ: ${res.data.successful_updates} รายการ\n`;
-        message += `ข้อผิดพลาด: ${res.data.errors} รายการ`;
-        
-        // ⭐ แสดงรายละเอียด errors (ถ้ามี)
-        if (res.data.errors > 0 && res.data.error_details && res.data.error_details.length > 0) {
-          message += `\n\n📋 รายละเอียดข้อผิดพลาด:\n`;
-          const maxErrors = 10; // แสดงสูงสุด 10 รายการ
-          const errorsToShow = res.data.error_details.slice(0, maxErrors);
-          message += errorsToShow.join('\n');
-          
-          if (res.data.error_details.length > maxErrors) {
-            message += `\n... และอีก ${res.data.error_details.length - maxErrors} รายการ`;
-          }
-        }
-        
-        alert(message);
-        onUploaded(res.data);
-      } else {
+        // Scheduled upload — ไม่มี progress stream
+        const endpoint = `/api/admin/prices/schedule?scheduled_date=${scheduledDate}`;
+        const res = await api.post(endpoint, form);
         alert(`✅ บันทึกตารางอัปโหลดสำเร็จ!\n\nไฟล์จะถูกอัปโหลดอัตโนมัติในวันที่: ${scheduledDate}`);
+        setFile(null);
+        setScheduledDate("");
+        setUploadMode("");
       }
-      
-      // ⭐ รีเซ็ตฟอร์ม
-      setFile(null);
-      setScheduledDate("");
-      setUploadMode(""); // รีเซ็ตเป็นไม่เลือก
     } catch (error) {
-      // แสดงข้อความ error
       const errorMsg = error.response?.data?.detail || error.message || "เกิดข้อผิดพลาดในการอัปโหลด";
       alert(`❌ เกิดข้อผิดพลาด!\n\n${errorMsg}`);
+      setProgress(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  // ⭐ Streaming upload handler — รับ SSE events จาก backend
+  const handleStreamingUpload = async (formData) => {
+    const baseUrl = import.meta.env.VITE_API_URL || "";
+    const url = `${baseUrl}/api/admin/prices/upload/stream`;
+
+    // ส่ง token เหมือน api.js
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let detail = errText;
+      try { detail = JSON.parse(errText).detail; } catch (_) {}
+      throw new Error(detail || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalResult = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE lines: "data: {...}\n\n"
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop(); // เก็บ incomplete chunk ไว้ก่อน
+
+      for (const line of lines) {
+        const trimmed = line.replace(/^data:\s*/m, "").trim();
+        if (!trimmed) continue;
+
+        let event;
+        try { event = JSON.parse(trimmed); } catch (_) { continue; }
+
+        // Update progress UI
+        setProgress({ pct: event.pct, message: event.message, step: event.step });
+
+        if (event.step === "done") {
+          finalResult = event;
+        } else if (event.step === "error") {
+          throw new Error(event.message);
+        }
+      }
+    }
+
+    // แสดงผลสรุป
+    if (finalResult) {
+      let message = `✅ อัปโหลดเสร็จสิ้น!\n\n`;
+      message += `อัปเดตราคาสำเร็จ: ${finalResult.successful_updates?.toLocaleString()} รายการ\n`;
+      message += `ข้อผิดพลาด: ${finalResult.errors} รายการ`;
+
+      if (finalResult.errors > 0 && finalResult.error_details?.length > 0) {
+        message += `\n\n📋 รายละเอียดข้อผิดพลาด:\n`;
+        const errorsToShow = finalResult.error_details.slice(0, 10);
+        message += errorsToShow.join('\n');
+        if (finalResult.error_details.length > 10) {
+          message += `\n... และอีก ${finalResult.error_details.length - 10} รายการ`;
+        }
+      }
+
+      alert(message);
+      onUploaded(finalResult);
+    }
+
+    setFile(null);
+    setUploadMode("");
+    setProgress(null);
   };
 
   // ⭐ Validate Excel file for NULL values and Branch column
@@ -365,6 +414,31 @@ export default function UploadPriceExcel({ onUploaded }) {
           รองรับเฉพาะไฟล์ .xlsx • ชื่อไฟล์ต้องลงท้ายด้วย _G0000 เช่น <span className="font-mono">Glass_690518_G0001.xlsx</span> • ไฟล์ต้องมีคอลัมน์ Branch (หรือ BranchCode, Branch_Code, สาขา)
           {uploadMode === "scheduled" && " • ระบบจะอัปโหลดอัตโนมัติในวันที่กำหนด"}
         </div>
+
+        {/* ⭐ Progress Bar (แสดงเฉพาะตอน immediate upload กำลังทำงาน) */}
+        {loading && uploadMode === "immediate" && progress && (
+          <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-blue-800">
+                กำลังประมวลผล...
+              </span>
+              <span className="text-sm font-bold text-blue-700">
+                {progress.pct}%
+              </span>
+            </div>
+
+            {/* Progress bar track */}
+            <div className="w-full h-3 bg-blue-100 rounded-full overflow-hidden mb-2">
+              <div
+                className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${progress.pct}%` }}
+              />
+            </div>
+
+            {/* Step message */}
+            <p className="text-xs text-blue-700 truncate">{progress.message}</p>
+          </div>
+        )}
       </div>
     </div>
   );

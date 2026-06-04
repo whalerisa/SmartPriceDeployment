@@ -10,15 +10,17 @@ Features:
 - SKU existence validation against Item_Master
 - Upsert logic (update existing, insert new)
 - Error handling with detailed summary
+- ⭐ Bulk processing for performance (30k+ rows in seconds)
 """
 
 import logging
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, Generator, List, Optional, Set, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import pandas as pd
+import pyodbc  # ⭐ For exception handling in fast_executemany fallback
 
 
 # Configure logging
@@ -71,6 +73,12 @@ class PriceUploadService:
     """
     Service for processing price file uploads and updating Item_Price table.
     
+    ⭐ Performance-optimized:
+    - Bulk SKU validation (1 query instead of N)
+    - Bulk old-price fetch (1 query instead of N)
+    - executemany for batch INSERT/UPDATE
+    - Bulk detail-log insert
+    
     Responsibilities:
     - Validate file format (CSV or Excel)
     - Validate required columns
@@ -97,6 +105,9 @@ class PriceUploadService:
     # Supported file extensions
     SUPPORTED_EXTENSIONS = [".csv", ".xlsx", ".xls"]
     
+    # ⭐ Batch size for bulk DB operations (increased for fast_executemany)
+    BULK_BATCH_SIZE = 5000
+    
     def __init__(self, db_connection):
         """
         Initialize Price Upload Service.
@@ -111,16 +122,13 @@ class PriceUploadService:
         """
         Process price file (CSV or Excel) and update Item_Price table.
         
-        Process:
-        1. Validate file format and required columns (including Branch column)
-        2. Parse file into list of price records
-        3. For each row:
-           - Read BranchCode from Branch column in file
-           - Validate SKU exists in Item_Master
-           - Skip rows with invalid SKU and log warning
-           - Upsert to Item_Price table (update if exists, insert if not)
-           - Set UpdatedAt timestamp
-        4. Return summary with total_rows, successful_updates, errors
+        ⭐ Optimized with bulk operations:
+        1. Validate file format and required columns
+        2. Parse file into records
+        3. Bulk validate SKUs (1 query)
+        4. Bulk fetch old prices (1 query)
+        5. Batch upsert with executemany
+        6. Bulk insert detail logs
         
         Args:
             file_path: Path to uploaded file
@@ -156,126 +164,696 @@ class PriceUploadService:
         # Validate required columns
         self._validate_columns(price_data)
         
-        # Process each row
         total_rows = len(price_data)
-        successful_updates = 0
-        errors = 0
-        error_details = []
+        logger.info(f"Processing {total_rows} price records (bulk mode)")
         
-        # ⭐ สร้าง version log
+        # ─────────────────────────────────────────────────────────
+        # STEP 1: Clean & filter rows
+        # ─────────────────────────────────────────────────────────
+        valid_rows = []
+        error_details = []
+        skipped_errors = 0
+        
+        for idx, row in enumerate(price_data, start=1):
+            # Parse SKU
+            sku_value = row.get(self._sku_column, "")
+            if isinstance(sku_value, (int, float)):
+                sku = str(sku_value).strip()
+            else:
+                sku = str(sku_value).strip() if sku_value else ""
+            
+            if not sku or sku.lower() == 'nan':
+                skipped_errors += 1
+                continue
+            
+            # Parse Branch
+            branch_value = row.get(self._branch_column, "")
+            if isinstance(branch_value, (int, float)):
+                branch_val = str(branch_value).strip()
+            else:
+                branch_val = str(branch_value).strip() if branch_value else ""
+            
+            if not branch_val or branch_val.lower() == 'nan':
+                error_msg = f"Row {idx}: SKU '{sku}' has empty Branch code"
+                error_details.append(error_msg)
+                skipped_errors += 1
+                continue
+            
+            valid_rows.append((idx, sku, branch_val, row))
+        
+        if not valid_rows:
+            return UploadResult(
+                total_rows=total_rows,
+                successful_updates=0,
+                errors=skipped_errors,
+                error_details=error_details
+            )
+        
+        # ─────────────────────────────────────────────────────────
+        # STEP 2: Bulk validate SKUs (1 query instead of 30,000)
+        # ─────────────────────────────────────────────────────────
+        all_skus = list(set(sku for _, sku, _, _ in valid_rows))
+        valid_skus = self._bulk_validate_skus(all_skus)
+        
+        # Filter out invalid SKUs
+        rows_after_validation = []
+        for idx, sku, branch_val, row in valid_rows:
+            if sku not in valid_skus:
+                error_msg = f"Row {idx}: SKU '{sku}' not found in Item_Master"
+                error_details.append(error_msg)
+                skipped_errors += 1
+            else:
+                rows_after_validation.append((idx, sku, branch_val, row))
+        
+        # Cap error_details to avoid huge responses
+        if len(error_details) > 100:
+            extra = len(error_details) - 100
+            error_details = error_details[:100]
+            error_details.append(f"... and {extra} more errors")
+        
+        if not rows_after_validation:
+            return UploadResult(
+                total_rows=total_rows,
+                successful_updates=0,
+                errors=skipped_errors,
+                error_details=error_details
+            )
+        
+        # ─────────────────────────────────────────────────────────
+        # STEP 3: Create version log
+        # ─────────────────────────────────────────────────────────
         version_id = self._create_version_log(price_data)
         logger.info(f"Created version log: {version_id}")
         
-        logger.info(f"Processing {total_rows} price records")
+        # ─────────────────────────────────────────────────────────
+        # STEP 4: Bulk fetch old prices (1 query instead of 30,000)
+        # ─────────────────────────────────────────────────────────
+        all_branches = list(set(b for _, _, b, _ in rows_after_validation))
+        old_prices = self._bulk_fetch_old_prices(all_skus, all_branches)
         
-        # ⭐ Batch processing: เก็บ records ไว้ก่อน แล้ว commit ทีเดียว
-        BATCH_SIZE = 100  # Commit ทุก 100 records
-        batch_count = 0
+        # ─────────────────────────────────────────────────────────
+        # STEP 5: Prepare batches for UPDATE, INSERT, and detail log
+        # ─────────────────────────────────────────────────────────
+        update_params = []   # params for UPDATE Item_Price
+        insert_params = []   # params for INSERT Item_Price
+        detail_params = []   # params for INSERT detail log
         
-        for idx, row in enumerate(price_data, start=1):
-            try:
-                # Use the detected SKU column name
-                sku_value = row.get(self._sku_column, "")
-                # Convert to string if it's a number
-                if isinstance(sku_value, (int, float)):
-                    sku = str(sku_value).strip()
-                else:
-                    sku = str(sku_value).strip() if sku_value else ""
-                
-                # Skip empty SKU or 'nan' values
-                if not sku or sku.lower() == 'nan':
-                    if idx <= 10:  # Only log first 10 to avoid spam
-                        logger.debug(f"Row {idx}: Skipping empty or NaN SKU")
-                    errors += 1
-                    continue
-                
-                # ⭐ Read BranchCode from file
-                branch_value = row.get(self._branch_column, "")
-                if isinstance(branch_value, (int, float)):
-                    branch_code = str(branch_value).strip()
-                else:
-                    branch_code = str(branch_value).strip() if branch_value else ""
-                
-                # Skip empty Branch
-                if not branch_code or branch_code.lower() == 'nan':
-                    error_msg = f"Row {idx}: SKU '{sku}' has empty Branch code"
-                    logger.warning(error_msg)
-                    error_details.append(error_msg)
-                    errors += 1
-                    continue
-                
-                # Validate SKU exists in Item_Master
-                if not self._sku_exists(sku):
-                    error_msg = f"Row {idx}: SKU '{sku}' not found in Item_Master"
-                    logger.warning(error_msg)
-                    error_details.append(error_msg)
-                    errors += 1
-                    continue
-                
-                # Extract price values
-                # Try to get PackageSize from Excel, default to 1 if not present or invalid
-                package_size = self._parse_decimal(row.get("PackageSize"))
-                if package_size is None or package_size <= 0:
-                    package_size = 1
-                
-                # Get AlternateName if present (optional field)
-                alternate_name = row.get("AlternateName", "")
-                if alternate_name and isinstance(alternate_name, str):
-                    alternate_name = alternate_name.strip()
-                else:
-                    alternate_name = None
-                
-                price_record = {
-                    "SKU": sku,
-                    "BranchCode": branch_code,  # ⭐ ใช้ branch_code จากไฟล์
-                    "SDM": self._parse_decimal(row.get("SDM")),
-                    "R2": self._parse_decimal(row.get("R2")),
-                    "R1": self._parse_decimal(row.get("R1")),
-                    "W2": self._parse_decimal(row.get("W2")),
-                    "W1": self._parse_decimal(row.get("W1")),
-                    "PackageSize": package_size,
-                    "AlternateName": alternate_name
-                }
-                
-                # Upsert price (ไม่ commit ทันที)
-                self._upsert_price(price_record, version_id, idx, auto_commit=False)
-                successful_updates += 1
-                batch_count += 1
-                
-                # ⭐ Batch commit: commit ทุก BATCH_SIZE records
-                if batch_count >= BATCH_SIZE:
-                    self.db_connection.commit()
-                    logger.info(f"Committed batch: {successful_updates}/{total_rows} records")
-                    batch_count = 0
-                
-                logger.debug(f"Successfully processed SKU: {sku}")
+        for idx, sku, branch_val, row in rows_after_validation:
+            # Parse price values
+            sdm = self._parse_decimal(row.get("SDM"))
+            r2 = self._parse_decimal(row.get("R2"))
+            r1 = self._parse_decimal(row.get("R1"))
+            w2 = self._parse_decimal(row.get("W2"))
+            w1 = self._parse_decimal(row.get("W1"))
             
-            except Exception as e:
-                error_msg = f"Row {idx}: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                error_details.append(error_msg)
-                errors += 1
-                # Continue processing remaining rows
+            # PackageSize
+            package_size = self._parse_decimal(row.get("PackageSize"))
+            if package_size is None or package_size <= 0:
+                package_size = 1
+            
+            # AlternateName
+            alternate_name = row.get("AlternateName", "")
+            if alternate_name and isinstance(alternate_name, str):
+                alternate_name = alternate_name.strip()
+            else:
+                alternate_name = None
+            
+            # Check old price
+            old_key = (sku, branch_val)
+            old = old_prices.get(old_key)
+            
+            if old:
+                old_R1, old_R2, old_W1, old_W2, old_alternate_name = old
+                # UPDATE
+                update_params.append((
+                    sdm, r2, r1, w2, w1, package_size, alternate_name,
+                    sku, branch_val
+                ))
+            else:
+                old_R1 = old_R2 = old_W1 = old_W2 = old_alternate_name = None
+                # INSERT
+                insert_params.append((
+                    sku, branch_val, sdm, r2, r1, w2, w1, package_size, alternate_name
+                ))
+            
+            # Calculate change flags
+            change_price_flag = 0
+            if old:
+                if (old_R1 != r1 or old_R2 != r2 or old_W1 != w1 or old_W2 != w2):
+                    change_price_flag = 1
+            else:
+                change_price_flag = 1
+            
+            change_altname_flag = 0
+            if old:
+                if old_alternate_name != alternate_name:
+                    change_altname_flag = 1
+            elif alternate_name:
+                change_altname_flag = 1
+            
+            # Detail log params
+            detail_params.append((
+                version_id, sku, alternate_name,
+                r1, r2, w1, w2,
+                old_R1, old_R2, old_W1, old_W2,
+                alternate_name, old_alternate_name,
+                change_price_flag, change_altname_flag,
+                branch_val
+            ))
         
-        # ⭐ Commit remaining records
-        if batch_count > 0:
-            self.db_connection.commit()
-            logger.info(f"Committed final batch: {successful_updates}/{total_rows} records")
+        # ─────────────────────────────────────────────────────────
+        # STEP 6: Execute bulk DB operations
+        # ─────────────────────────────────────────────────────────
+        successful_updates = 0
+        
+        try:
+            cursor = self.db_connection.cursor()
+            cursor.fast_executemany = True  # ⭐ เปิด fast_executemany — เร็วขึ้น 10-50x
+            
+            # ⭐ Bulk UPDATE existing prices
+            if update_params:
+                logger.info(f"Bulk UPDATE: {len(update_params)} rows...")
+                for i in range(0, len(update_params), self.BULK_BATCH_SIZE):
+                    batch = update_params[i:i + self.BULK_BATCH_SIZE]
+                    cursor.executemany(
+                        """
+                        UPDATE Item_Price
+                        SET SDM = ?, R2 = ?, R1 = ?, W2 = ?, W1 = ?,
+                            PackageSize = ?, AlternateName = ?, UpdatedAt = GETDATE()
+                        WHERE SKU = ? AND BranchCode = ?
+                        """,
+                        batch
+                    )
+                    logger.info(f"  UPDATE batch {i // self.BULK_BATCH_SIZE + 1} done ({len(batch)} rows)")
+                self.db_connection.commit()  # ⭐ commit ครั้งเดียวหลัง UPDATE ทั้งหมด
+                successful_updates += len(update_params)
+            
+            # ⭐ Bulk INSERT new prices
+            if insert_params:
+                logger.info(f"Bulk INSERT: {len(insert_params)} rows...")
+                for i in range(0, len(insert_params), self.BULK_BATCH_SIZE):
+                    batch = insert_params[i:i + self.BULK_BATCH_SIZE]
+                    cursor.executemany(
+                        """
+                        INSERT INTO Item_Price (
+                            SKU, BranchCode, SDM, R2, R1, W2, W1,
+                            PackageSize, AlternateName, UpdatedAt
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+                        """,
+                        batch
+                    )
+                    logger.info(f"  INSERT batch {i // self.BULK_BATCH_SIZE + 1} done ({len(batch)} rows)")
+                self.db_connection.commit()  # ⭐ commit ครั้งเดียวหลัง INSERT ทั้งหมด
+                successful_updates += len(insert_params)
+            
+            # ⭐ Bulk INSERT detail logs
+            # หา starting id ครั้งเดียว แล้ว increment ใน Python
+            if detail_params:
+                logger.info(f"Bulk INSERT detail logs: {len(detail_params)} rows...")
+                cursor.execute("SELECT ISNULL(MAX(id), 0) FROM Item_Update_Version_Detail")
+                next_id = int(cursor.fetchone()[0]) + 1
+                
+                # เพิ่ม id เข้าไปใน params แต่ละ row
+                detail_params_with_id = []
+                for i, params in enumerate(detail_params):
+                    detail_params_with_id.append((next_id + i,) + params)
+                
+                # ⭐ Try fast_executemany first, fallback to slow mode if decimal precision error
+                try:
+                    for i in range(0, len(detail_params_with_id), self.BULK_BATCH_SIZE):
+                        batch = detail_params_with_id[i:i + self.BULK_BATCH_SIZE]
+                        cursor.executemany(
+                            """
+                            INSERT INTO Item_Update_Version_Detail (
+                                id, version_id, sku, new_no2,
+                                new_R1, new_R2, new_W1, new_W2,
+                                old_R1, old_R2, old_W1, old_W2,
+                                new_alternate_name, old_alternate_name,
+                                change_price_flag, change_altname_flag,
+                                BranchCode
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            batch
+                        )
+                        logger.info(f"  Detail log batch {i // self.BULK_BATCH_SIZE + 1} done ({len(batch)} rows)")
+                except pyodbc.ProgrammingError as e:
+                    if "decimal" in str(e).lower() or "precision" in str(e).lower():
+                        logger.warning(f"fast_executemany failed for detail log: {e}")
+                        logger.info("Falling back to slow mode (fast_executemany=False) for detail log...")
+                        self.db_connection.rollback()  # Rollback failed attempts
+                        
+                        # Retry with fast_executemany disabled
+                        cursor.fast_executemany = False
+                        for i in range(0, len(detail_params_with_id), self.BULK_BATCH_SIZE):
+                            batch = detail_params_with_id[i:i + self.BULK_BATCH_SIZE]
+                            cursor.executemany(
+                                """
+                                INSERT INTO Item_Update_Version_Detail (
+                                    id, version_id, sku, new_no2,
+                                    new_R1, new_R2, new_W1, new_W2,
+                                    old_R1, old_R2, old_W1, old_W2,
+                                    new_alternate_name, old_alternate_name,
+                                    change_price_flag, change_altname_flag,
+                                    BranchCode
+                                )
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                batch
+                            )
+                            logger.info(f"  Detail log batch {i // self.BULK_BATCH_SIZE + 1} done (slow mode, {len(batch)} rows)")
+                        cursor.fast_executemany = True  # Re-enable for next time
+                    else:
+                        raise  # Re-raise if it's a different error
+                
+                self.db_connection.commit()  # ⭐ commit ครั้งเดียวหลัง detail log ทั้งหมด
+            
+            cursor.close()
+            
+        except Exception as e:
+            logger.error(f"Bulk operation failed: {e}", exc_info=True)
+            self.db_connection.rollback()
+            error_details.append(f"Database error: {str(e)}")
+            # If we failed mid-way, count what wasn't processed as errors
+            skipped_errors += len(rows_after_validation) - successful_updates
+            successful_updates = 0  # Can't guarantee partial success
         
         # Log summary
+        total_errors = skipped_errors
         logger.info(
             f"Price upload completed: "
             f"total_rows={total_rows}, "
             f"successful_updates={successful_updates}, "
-            f"errors={errors}"
+            f"errors={total_errors}"
         )
         
         return UploadResult(
             total_rows=total_rows,
             successful_updates=successful_updates,
-            errors=errors,
+            errors=total_errors,
             error_details=error_details
         )
+    
+    def process_upload_stream(
+        self,
+        file_path: str,
+        branch_code: Optional[str],
+        employee_info: dict,
+        version_key: Optional[str] = None,
+    ) -> Generator[str, None, None]:
+        """
+        ⭐ Streaming version ของ process_upload
+        Yield SSE-formatted progress events ระหว่างประมวลผล
+        
+        Events format (JSON per line):
+            data: {"step": "parsing", "pct": 5, "message": "..."}
+        
+        Steps:
+            parsing (5%) → validating_skus (20%) → fetching_prices (35%)
+            → updating (35–90%) → inserting (90%) → detail_log (95%) → done (100%)
+        """
+        import json
+
+        def _event(step: str, pct: int, message: str, **extra) -> str:
+            payload = {"step": step, "pct": pct, "message": message, **extra}
+            return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        self._branch_code = branch_code
+        self._employee_info = employee_info
+        self._version_key = version_key
+
+        # ── Step 1: Parse file ────────────────────────────────
+        yield _event("parsing", 5, "กำลังอ่านไฟล์ Excel...")
+
+        self._validate_file_format(file_path)
+        try:
+            price_data = self._parse_file(file_path)
+        except Exception as e:
+            yield _event("error", 0, f"อ่านไฟล์ไม่สำเร็จ: {str(e)}")
+            return
+
+        self._validate_columns(price_data)
+        total_rows = len(price_data)
+        yield _event("parsed", 10, f"อ่านไฟล์แล้ว: {total_rows:,} รายการ", total_rows=total_rows)
+
+        # ── Step 2: Clean & filter ────────────────────────────
+        yield _event("cleaning", 12, "กำลังตรวจสอบข้อมูล...")
+
+        valid_rows = []
+        error_details = []
+        skipped_errors = 0
+
+        for idx, row in enumerate(price_data, start=1):
+            sku_value = row.get(self._sku_column, "")
+            if isinstance(sku_value, (int, float)):
+                sku = str(sku_value).strip()
+            else:
+                sku = str(sku_value).strip() if sku_value else ""
+
+            if not sku or sku.lower() == "nan":
+                skipped_errors += 1
+                continue
+
+            branch_value = row.get(self._branch_column, "")
+            if isinstance(branch_value, (int, float)):
+                branch_val = str(branch_value).strip()
+            else:
+                branch_val = str(branch_value).strip() if branch_value else ""
+
+            if not branch_val or branch_val.lower() == "nan":
+                error_details.append(f"Row {idx}: SKU '{sku}' has empty Branch code")
+                skipped_errors += 1
+                continue
+
+            valid_rows.append((idx, sku, branch_val, row))
+
+        if not valid_rows:
+            yield _event("done", 100, "ไม่มีข้อมูลที่ valid",
+                         total_rows=total_rows, successful_updates=0, errors=skipped_errors,
+                         error_details=error_details)
+            return
+
+        # ── Step 3: Bulk validate SKUs ────────────────────────
+        yield _event("validating_skus", 20,
+                     f"กำลังตรวจสอบ SKU {len(set(s for _,s,_,_ in valid_rows)):,} รายการ...")
+
+        all_skus = list(set(sku for _, sku, _, _ in valid_rows))
+        valid_skus = self._bulk_validate_skus(all_skus)
+
+        rows_after_validation = []
+        for idx, sku, branch_val, row in valid_rows:
+            if sku not in valid_skus:
+                error_details.append(f"Row {idx}: SKU '{sku}' not found in Item_Master")
+                skipped_errors += 1
+            else:
+                rows_after_validation.append((idx, sku, branch_val, row))
+
+        if len(error_details) > 100:
+            extra = len(error_details) - 100
+            error_details = error_details[:100]
+            error_details.append(f"... and {extra} more errors")
+
+        valid_count = len(rows_after_validation)
+        yield _event("skus_validated", 25,
+                     f"ตรวจสอบ SKU แล้ว: valid {valid_count:,} / invalid {len(all_skus) - len(valid_skus):,}",
+                     valid_count=valid_count)
+
+        if not rows_after_validation:
+            yield _event("done", 100, "ไม่มี SKU ที่ valid",
+                         total_rows=total_rows, successful_updates=0, errors=skipped_errors,
+                         error_details=error_details)
+            return
+
+        # ── Step 4: Create version log ────────────────────────
+        yield _event("version_log", 28, "กำลังสร้าง version log...")
+        version_id = self._create_version_log(price_data)
+
+        # ── Step 5: Bulk fetch old prices ─────────────────────
+        yield _event("fetching_prices", 35, "กำลังดึงราคาเดิมจาก DB...")
+
+        all_branches = list(set(b for _, _, b, _ in rows_after_validation))
+        old_prices = self._bulk_fetch_old_prices(all_skus, all_branches)
+
+        # ── Step 6: Prepare batches ───────────────────────────
+        yield _event("preparing", 40, "กำลังเตรียม batch...")
+
+        update_params = []
+        insert_params = []
+        detail_params = []
+
+        for idx, sku, branch_val, row in rows_after_validation:
+            sdm = self._parse_decimal(row.get("SDM"))
+            r2  = self._parse_decimal(row.get("R2"))
+            r1  = self._parse_decimal(row.get("R1"))
+            w2  = self._parse_decimal(row.get("W2"))
+            w1  = self._parse_decimal(row.get("W1"))
+
+            package_size = self._parse_decimal(row.get("PackageSize"))
+            if package_size is None or package_size <= 0:
+                package_size = 1
+
+            alternate_name = row.get("AlternateName", "")
+            if alternate_name and isinstance(alternate_name, str):
+                alternate_name = alternate_name.strip()
+            else:
+                alternate_name = None
+
+            old_key = (sku, branch_val)
+            old = old_prices.get(old_key)
+
+            if old:
+                old_R1, old_R2, old_W1, old_W2, old_alternate_name = old
+                update_params.append((sdm, r2, r1, w2, w1, package_size, alternate_name, sku, branch_val))
+            else:
+                old_R1 = old_R2 = old_W1 = old_W2 = old_alternate_name = None
+                insert_params.append((sku, branch_val, sdm, r2, r1, w2, w1, package_size, alternate_name))
+
+            change_price_flag = 0
+            if old:
+                if old_R1 != r1 or old_R2 != r2 or old_W1 != w1 or old_W2 != w2:
+                    change_price_flag = 1
+            else:
+                change_price_flag = 1
+
+            change_altname_flag = 0
+            if old:
+                if old_alternate_name != alternate_name:
+                    change_altname_flag = 1
+            elif alternate_name:
+                change_altname_flag = 1
+
+            detail_params.append((
+                version_id, sku, alternate_name,
+                r1, r2, w1, w2,
+                old_R1, old_R2, old_W1, old_W2,
+                alternate_name, old_alternate_name,
+                change_price_flag, change_altname_flag,
+                branch_val,
+            ))
+
+        # ── Step 7: Bulk UPDATE ───────────────────────────────
+        successful_updates = 0
+        try:
+            cursor = self.db_connection.cursor()
+            # ⭐⭐ Enable fast_executemany for 10-100x faster batch operations
+            cursor.fast_executemany = True
+
+            if update_params:
+                total_update_batches = (len(update_params) + self.BULK_BATCH_SIZE - 1) // self.BULK_BATCH_SIZE
+                for i in range(0, len(update_params), self.BULK_BATCH_SIZE):
+                    batch = update_params[i : i + self.BULK_BATCH_SIZE]
+                    cursor.executemany(
+                        """
+                        UPDATE Item_Price
+                        SET SDM=?, R2=?, R1=?, W2=?, W1=?,
+                            PackageSize=?, AlternateName=?, UpdatedAt=GETDATE()
+                        WHERE SKU=? AND BranchCode=?
+                        """,
+                        batch,
+                    )
+                    successful_updates += len(batch)
+                    done_so_far = successful_updates
+                    pct = int(45 + (done_so_far / valid_count) * 40)  # 45→85
+                    batch_num = i // self.BULK_BATCH_SIZE + 1
+                    yield _event(
+                        "updating", pct,
+                        f"อัปเดตราคา {done_so_far:,} / {valid_count:,} รายการ "
+                        f"(batch {batch_num}/{total_update_batches})",
+                        processed=done_so_far, total=valid_count,
+                    )
+                self.db_connection.commit()  # ⭐ commit ครั้งเดียวหลัง UPDATE ทั้งหมด
+
+            # ── Step 8: Bulk INSERT ───────────────────────────
+            if insert_params:
+                total_insert_batches = (len(insert_params) + self.BULK_BATCH_SIZE - 1) // self.BULK_BATCH_SIZE
+                for i in range(0, len(insert_params), self.BULK_BATCH_SIZE):
+                    batch = insert_params[i : i + self.BULK_BATCH_SIZE]
+                    cursor.executemany(
+                        """
+                        INSERT INTO Item_Price
+                            (SKU, BranchCode, SDM, R2, R1, W2, W1, PackageSize, AlternateName, UpdatedAt)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
+                        """,
+                        batch,
+                    )
+                    successful_updates += len(batch)
+                    done_so_far = successful_updates
+                    pct = int(45 + (done_so_far / valid_count) * 40)
+                    batch_num = i // self.BULK_BATCH_SIZE + 1
+                    yield _event(
+                        "inserting", pct,
+                        f"เพิ่มราคาใหม่ {done_so_far:,} / {valid_count:,} รายการ "
+                        f"(batch {batch_num}/{total_insert_batches})",
+                        processed=done_so_far, total=valid_count,
+                    )
+                self.db_connection.commit()  # ⭐ commit ครั้งเดียวหลัง INSERT ทั้งหมด
+
+            # ── Step 9: Bulk INSERT detail log ───────────────
+            if detail_params:
+                yield _event("detail_log", 90, f"กำลังบันทึก log {len(detail_params):,} รายการ...")
+                cursor.execute("SELECT ISNULL(MAX(id), 0) FROM Item_Update_Version_Detail")
+                next_id = int(cursor.fetchone()[0]) + 1
+
+                detail_with_id = [(next_id + k,) + p for k, p in enumerate(detail_params)]
+                
+                # ⭐ Try fast_executemany first, fallback to slow mode if decimal precision error
+                try:
+                    for i in range(0, len(detail_with_id), self.BULK_BATCH_SIZE):
+                        batch = detail_with_id[i : i + self.BULK_BATCH_SIZE]
+                        cursor.executemany(
+                            """
+                            INSERT INTO Item_Update_Version_Detail
+                                (id, version_id, sku, new_no2,
+                                 new_R1, new_R2, new_W1, new_W2,
+                                 old_R1, old_R2, old_W1, old_W2,
+                                 new_alternate_name, old_alternate_name,
+                                 change_price_flag, change_altname_flag, BranchCode)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            batch,
+                        )
+                except pyodbc.ProgrammingError as e:
+                    if "decimal" in str(e).lower() or "precision" in str(e).lower():
+                        logger.warning(f"fast_executemany failed for detail log: {e}")
+                        logger.info("Falling back to slow mode (fast_executemany=False) for detail log...")
+                        self.db_connection.rollback()  # Rollback failed attempts
+                        
+                        # Retry with fast_executemany disabled
+                        cursor.fast_executemany = False
+                        for i in range(0, len(detail_with_id), self.BULK_BATCH_SIZE):
+                            batch = detail_with_id[i : i + self.BULK_BATCH_SIZE]
+                            cursor.executemany(
+                                """
+                                INSERT INTO Item_Update_Version_Detail
+                                    (id, version_id, sku, new_no2,
+                                     new_R1, new_R2, new_W1, new_W2,
+                                     old_R1, old_R2, old_W1, old_W2,
+                                     new_alternate_name, old_alternate_name,
+                                     change_price_flag, change_altname_flag, BranchCode)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                batch,
+                            )
+                        cursor.fast_executemany = True  # Re-enable for next time
+                    else:
+                        raise  # Re-raise if it's a different error
+                
+                self.db_connection.commit()  # ⭐ commit ครั้งเดียวหลัง detail log ทั้งหมด
+
+            cursor.close()
+
+        except Exception as e:
+            logger.error(f"Bulk operation failed: {e}", exc_info=True)
+            self.db_connection.rollback()
+            error_details.append(f"Database error: {str(e)}")
+            yield _event(
+                "error", 0,
+                f"เกิดข้อผิดพลาด: {str(e)}",
+                total_rows=total_rows,
+                successful_updates=successful_updates,
+                errors=skipped_errors + (valid_count - successful_updates),
+                error_details=error_details,
+            )
+            return
+
+        total_errors = skipped_errors
+        yield _event(
+            "done", 100,
+            f"เสร็จสิ้น! อัปเดต {successful_updates:,} รายการ",
+            total_rows=total_rows,
+            successful_updates=successful_updates,
+            errors=total_errors,
+            error_details=error_details,
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # BULK HELPER METHODS (⭐ ลด DB round-trips จาก N เหลือ ~3)
+    # ═══════════════════════════════════════════════════════════
+    
+    def _bulk_validate_skus(self, skus: List[str]) -> Set[str]:
+        """
+        ⭐ Validate all SKUs in bulk (single query per chunk).
+        
+        SQL Server IN clause supports ~2100 params max,
+        so we batch into chunks of 2000.
+        
+        Args:
+            skus: List of unique SKU strings
+        
+        Returns:
+            Set of valid SKUs that exist in Item_Master
+        """
+        if not skus:
+            return set()
+        
+        valid_skus: Set[str] = set()
+        cursor = self.db_connection.cursor()
+        
+        try:
+            CHUNK_SIZE = 2000
+            for i in range(0, len(skus), CHUNK_SIZE):
+                chunk = skus[i:i + CHUNK_SIZE]
+                placeholders = ",".join(["?"] * len(chunk))
+                cursor.execute(
+                    f"SELECT SKU FROM Item_Master WHERE SKU IN ({placeholders})",
+                    chunk
+                )
+                for row in cursor.fetchall():
+                    valid_skus.add(row[0])
+            
+            logger.info(f"SKU validation: {len(valid_skus)}/{len(skus)} valid SKUs found")
+            return valid_skus
+        finally:
+            cursor.close()
+    
+    def _bulk_fetch_old_prices(self, skus: List[str], branches: List[str]) -> Dict[Tuple[str, str], Tuple]:
+        """
+        ⭐ Fetch all existing prices in a single query (per chunk).
+        
+        Args:
+            skus: List of unique SKUs
+            branches: List of unique branch codes
+        
+        Returns:
+            Dict mapping (SKU, BranchCode) → (R1, R2, W1, W2, AlternateName)
+        """
+        if not skus or not branches:
+            return {}
+        
+        old_prices: Dict[Tuple[str, str], Tuple] = {}
+        cursor = self.db_connection.cursor()
+        
+        try:
+            CHUNK_SIZE = 2000
+            branch_placeholders = ",".join(["?"] * len(branches))
+            
+            for i in range(0, len(skus), CHUNK_SIZE):
+                chunk = skus[i:i + CHUNK_SIZE]
+                sku_placeholders = ",".join(["?"] * len(chunk))
+                
+                cursor.execute(
+                    f"""
+                    SELECT SKU, BranchCode, R1, R2, W1, W2, AlternateName
+                    FROM Item_Price WITH (NOLOCK)
+                    WHERE SKU IN ({sku_placeholders})
+                      AND BranchCode IN ({branch_placeholders})
+                    """,
+                    chunk + branches
+                )
+                
+                for row in cursor.fetchall():
+                    key = (row[0], row[1])  # (SKU, BranchCode)
+                    old_prices[key] = (row[2], row[3], row[4], row[5], row[6])
+            
+            logger.info(f"Fetched {len(old_prices)} existing price records from DB")
+            return old_prices
+        finally:
+            cursor.close()
+    
+    # ═══════════════════════════════════════════════════════════
+    # FILE PARSING & VALIDATION (unchanged logic)
+    # ═══════════════════════════════════════════════════════════
     
     def _validate_file_format(self, file_path: str):
         """
@@ -304,6 +882,9 @@ class PriceUploadService:
         """
         Parse CSV or Excel file into list of dictionaries.
         
+        ⭐ ใช้ calamine engine (Rust-based) ที่เร็วกว่า openpyxl 5-10x
+        Fallback กลับ openpyxl ถ้า calamine ไม่ available
+        
         Args:
             file_path: Path to file
         
@@ -319,7 +900,13 @@ class PriceUploadService:
             if file_ext == ".csv":
                 df = pd.read_csv(file_path)
             elif file_ext in [".xlsx", ".xls"]:
-                df = pd.read_excel(file_path, engine="openpyxl" if file_ext == ".xlsx" else None)
+                # ⭐ ใช้ calamine engine (Rust-based) ที่เร็วกว่า openpyxl 5-10x
+                try:
+                    df = pd.read_excel(file_path, engine="calamine")
+                    logger.info("Using calamine engine for Excel parsing (fast)")
+                except (ImportError, ValueError):
+                    df = pd.read_excel(file_path, engine="openpyxl" if file_ext == ".xlsx" else None)
+                    logger.info("Using openpyxl engine for Excel parsing (fallback)")
             else:
                 raise ValidationError(f"Unsupported file extension: {file_ext}")
             
@@ -392,27 +979,6 @@ class PriceUploadService:
         
         logger.debug("All required columns present")
     
-    def _sku_exists(self, sku: str) -> bool:
-        """
-        Check if SKU exists in Item_Master table.
-        
-        Args:
-            sku: SKU to check
-        
-        Returns:
-            True if SKU exists, False otherwise
-        """
-        cursor = self.db_connection.cursor()
-        try:
-            cursor.execute(
-                "SELECT COUNT(*) FROM Item_Master WHERE SKU = ?",
-                (sku,)
-            )
-            count = cursor.fetchone()[0]
-            return count > 0
-        finally:
-            cursor.close()
-    
     def _parse_decimal(self, value) -> Optional[float]:
         """
         Parse decimal value from various input types.
@@ -423,10 +989,12 @@ class PriceUploadService:
         Returns:
             Float value or None if invalid
         """
-        if pd.isna(value) or value is None or value == "":
+        if value is None or value == "":
             return None
         
         try:
+            if isinstance(value, float) and pd.isna(value):
+                return None
             return float(value)
         except (ValueError, TypeError):
             logger.warning(f"Invalid decimal value: {value}")
@@ -503,161 +1071,5 @@ class PriceUploadService:
             logger.error(f"Failed to create version log: {e}")
             self.db_connection.rollback()
             raise
-        finally:
-            cursor.close()
-    
-    def _upsert_price(self, price_data: Dict, version_id: int, row_index: int, auto_commit: bool = True):
-        """
-        Insert or update price in Item_Price table และบันทึก detail log
-        
-        Logic:
-        - ดึงราคาเก่าจาก Item_Price (ถ้ามี)
-        - Check if SKU exists in Item_Price
-        - If exists: UPDATE all price fields and UpdatedAt
-        - If not exists: INSERT with UpdatedAt = current timestamp
-        - บันทึก detail log ลง Item_Update_Version_Detail
-        
-        Args:
-            price_data: Dictionary with SKU and price fields
-            version_id: ID ของ version log
-            row_index: ลำดับแถวในไฟล์
-            auto_commit: ถ้า True จะ commit ทันที, ถ้า False จะรอ batch commit (default: True)
-        
-        Raises:
-            Exception: If database operation fails
-        """
-        sku = price_data["SKU"]
-        
-        cursor = self.db_connection.cursor()
-        try:
-            branch_code = price_data["BranchCode"]
-            
-            # ดึงราคาเก่าก่อน update
-            cursor.execute("""
-                SELECT R1, R2, W1, W2, AlternateName
-                FROM Item_Price WITH (NOLOCK)
-                WHERE SKU = ? AND BranchCode = ?
-            """, (sku, branch_code))
-            
-            old_row = cursor.fetchone()
-            if old_row:
-                old_R1, old_R2, old_W1, old_W2, old_alternate_name = old_row
-                exists = True
-            else:
-                old_R1 = old_R2 = old_W1 = old_W2 = old_alternate_name = None
-                exists = False
-            
-            # ราคาใหม่
-            new_R1 = price_data["R1"]
-            new_R2 = price_data["R2"]
-            new_W1 = price_data["W1"]
-            new_W2 = price_data["W2"]
-            new_alternate_name = price_data["AlternateName"]
-            
-            # ⭐ คำนวณ change flags
-            change_price_flag = 0
-            if exists:
-                if (old_R1 != new_R1 or old_R2 != new_R2 or 
-                    old_W1 != new_W1 or old_W2 != new_W2):
-                    change_price_flag = 1
-            else:
-                # SKU ใหม่ถือว่ามีการเปลี่ยนแปลงราคา
-                change_price_flag = 1
-            
-            change_altname_flag = 0
-            if exists:
-                if old_alternate_name != new_alternate_name:
-                    change_altname_flag = 1
-            else:
-                # SKU ใหม่ถ้ามี alternate name ถือว่ามีการเปลี่ยนแปลง
-                if new_alternate_name:
-                    change_altname_flag = 1
-            
-            # Update หรือ Insert ราคา
-            if exists:
-                # Update existing price
-                cursor.execute(
-                    """
-                    UPDATE Item_Price
-                    SET SDM = ?,
-                        R2 = ?,
-                        R1 = ?,
-                        W2 = ?,
-                        W1 = ?,
-                        PackageSize = ?,
-                        AlternateName = ?,
-                        UpdatedAt = GETDATE()
-                    WHERE SKU = ? AND BranchCode = ?
-                    """,
-                    (
-                        price_data["SDM"],
-                        price_data["R2"],
-                        price_data["R1"],
-                        price_data["W2"],
-                        price_data["W1"],
-                        price_data["PackageSize"],
-                        price_data["AlternateName"],
-                        sku,
-                        branch_code
-                    )
-                )
-                logger.debug(f"Updated price for SKU: {sku}, Branch: {branch_code}")
-            
-            else:
-                # Insert new price with UpdatedAt timestamp
-                cursor.execute(
-                    """
-                    INSERT INTO Item_Price (
-                        SKU, BranchCode, SDM, R2, R1, W2, W1, PackageSize, AlternateName, UpdatedAt
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE())
-                    """,
-                    (
-                        sku,
-                        branch_code,
-                        price_data["SDM"],
-                        price_data["R2"],
-                        price_data["R1"],
-                        price_data["W2"],
-                        price_data["W1"],
-                        price_data["PackageSize"],
-                        price_data["AlternateName"]
-                    )
-                )
-                logger.debug(f"Inserted new price for SKU: {sku}, Branch: {branch_code}")
-            
-            # บันทึก detail log
-            # หา id ถัดไป (MAX + 1)
-            cursor.execute("SELECT ISNULL(MAX(id), 0) + 1 FROM Item_Update_Version_Detail")
-            detail_id = int(cursor.fetchone()[0])
-            
-            cursor.execute("""
-                INSERT INTO Item_Update_Version_Detail (
-                    id, version_id, sku, new_no2, 
-                    new_R1, new_R2, new_W1, new_W2,
-                    old_R1, old_R2, old_W1, old_W2,
-                    new_alternate_name, old_alternate_name,
-                    change_price_flag, change_altname_flag,
-                    BranchCode
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                detail_id,
-                version_id,
-                sku,
-                new_alternate_name,  # new_no2 (ชื่อสินค้า)
-                new_R1, new_R2, new_W1, new_W2,
-                old_R1, old_R2, old_W1, old_W2,
-                new_alternate_name,
-                old_alternate_name,
-                change_price_flag,
-                change_altname_flag,
-                branch_code
-            ))
-            
-            # ⭐ Commit เฉพาะเมื่อ auto_commit = True
-            if auto_commit:
-                self.db_connection.commit()
-        
         finally:
             cursor.close()
