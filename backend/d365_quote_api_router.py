@@ -6,24 +6,17 @@ POST /api/d365/sales-quote — รับข้อมูล Quote แล้วส
 ทีม D365 สามารถนำ JSON นี้ไปใช้ต่อได้เลย
 """
 
-import json
 import logging
-import os
 from typing import List, Optional
 from datetime import datetime, date
-from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/d365", tags=["D365 Sales Quote API"])
-
-# โฟลเดอร์เก็บ JSON output
-OUTPUT_DIR = Path(__file__).parent / "data" / "d365_quotes"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==================== Models ====================
@@ -43,7 +36,6 @@ class D365CreateQuoteRequest(BaseModel):
     quote_code: str = Field(..., description="รหัส Quote เช่น TRQT-6805/0001")
     customer_no: str = Field(..., description="D365 Customer No. เช่น 08015AY")
     sales_admin: str = Field("", description="Sales Admin code เช่น 20614")
-    your_reference: str = Field("", description="เลข Quote อ้างอิง")
     project_code: Optional[str] = Field(None, description="Project Code")
     shipment_date: Optional[date] = Field(None, description="วันที่จัดส่ง (Shipment Date)")
     items: List[D365QuoteLineItem] = Field(..., description="รายการสินค้า")
@@ -51,19 +43,17 @@ class D365CreateQuoteRequest(BaseModel):
 
 # ==================== Endpoint ====================
 
-@router.post("/sales-quote", summary="สร้าง JSON สำหรับ D365 Sales Quote")
+@router.post("/sales-quote", summary="ส่งออกข้อมูล D365 Sales Quote เป็น JSON")
 def create_d365_sales_quote(request: D365CreateQuoteRequest):
     """
-    รับข้อมูล Quote แล้วสร้าง JSON file ส่งออก
-    ทีม D365 นำไฟล์ JSON นี้ไปใช้ต่อได้เลย
+    รับข้อมูล Quote แล้วส่งออกเป็น JSON 
     """
 
-    # สร้าง JSON payload
     output = {
         "quote_code": request.quote_code,
         "customer_no": request.customer_no,
         "sales_admin": request.sales_admin,
-        "your_reference": request.your_reference,
+        "your_reference": request.quote_code,
         "project_code": request.project_code,
         "shipment_date": request.shipment_date.isoformat() if request.shipment_date else None,
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -81,22 +71,10 @@ def create_d365_sales_quote(request: D365CreateQuoteRequest):
         ],
     }
 
-    # บันทึกเป็นไฟล์ JSON
-    safe_name = request.quote_code.replace("/", "_").replace("\\", "_")
-    filename = f"{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    filepath = OUTPUT_DIR / filename
-
-    try:
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
-        logger.info(f"✅ D365 JSON saved: {filepath}")
-    except Exception as e:
-        logger.error(f"❌ Failed to save JSON: {e}")
-        raise HTTPException(status_code=500, detail=f"ไม่สามารถบันทึกไฟล์ได้: {e}")
+    logger.info(f"✅ D365 JSON exported for quote: {request.quote_code}")
 
     return JSONResponse(content={
         "success": True,
-        "message": f"JSON สร้างสำเร็จ: {filename}",
-        "filename": filename,
+        "message": "ส่งออก JSON สำเร็จ",
         "payload": output,
     })

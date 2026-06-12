@@ -188,7 +188,14 @@ class InvoiceJobResult:
 # =========================
 
 def load_all_invoices_from_d365(start_date: date, end_date: date) -> List[Dict]:
-    """ดึงข้อมูล invoice ทั้งหมดจาก D365 API ตามช่วงวันที่"""
+    """
+    ดึงข้อมูล invoice ทั้งหมดจาก D365 API ตามช่วงวันที่
+    
+    ⚠️ AGGRESSIVE RETRY MODE:
+    - Retry ทุก error ไม่เว้น
+    - ถ้า page ใดล้มเหลว จะ raise exception เพื่อให้ Airflow retry ทั้ง job
+    - รับประกันว่าได้ข้อมูลครบถ้วน 100%
+    """
     invoice_api_url = os.getenv("INVOICE_API_URL", "").strip() or DEFAULT_INVOICE_API_URL
     invoice_api_key = os.getenv("INVOICE_API_KEY", "").strip() or DEFAULT_INVOICE_API_KEY
     
@@ -203,6 +210,7 @@ def load_all_invoices_from_d365(start_date: date, end_date: date) -> List[Dict]:
     
     logger.info(f"📥 Loading invoices from D365 API...")
     logger.info(f"   Date range: {start_date} to {end_date}")
+    logger.info(f"   Retry config: MAX_RETRIES={API_MAX_RETRIES}, DELAY={API_RETRY_DELAY}s")
     
     date_from = start_date.isoformat()
     date_to = end_date.isoformat()
@@ -214,9 +222,11 @@ def load_all_invoices_from_d365(start_date: date, end_date: date) -> List[Dict]:
             "Posting Date": {"$gte": date_from, "$lte": date_to}
         }
 
-        # ⭐ Retry loop สำหรับแต่ละ page
+        # ⭐ Retry loop สำหรับแต่ละ page (retry ทุกกรณี error)
         retry = 0
         success = False
+        last_error = None
+        
         while retry <= API_MAX_RETRIES:
             try:
                 if retry > 0:
@@ -236,41 +246,54 @@ def load_all_invoices_from_d365(start_date: date, end_date: date) -> List[Dict]:
                 items = data.get("data") or []
 
                 if not items:
-                    logger.info(f"  ✓ page={page}: No more data")
-                    return rows  # ออกจาก function เลย
+                    logger.info(f"  ✓ page={page}: No more data (reached end)")
+                    logger.info(f"📊 Total invoices loaded: {len(rows)}")
+                    return rows  # จบ job สำเร็จ
 
                 rows.extend(items)
                 logger.info(f"  ✓ page={page}: Loaded {len(items)} invoices (total: {len(rows)})")
 
                 if len(items) < API_PAGE_SIZE:
-                    logger.info("  ✓ Completed (last page)")
-                    return rows  # ออกจาก function เลย
+                    logger.info(f"  ✓ Completed (last page with {len(items)} items)")
+                    logger.info(f"📊 Total invoices loaded: {len(rows)}")
+                    return rows  # จบ job สำเร็จ
 
                 success = True
                 break  # page นี้สำเร็จ ออกจาก retry loop
 
             except requests.exceptions.Timeout as e:
-                logger.error(f"  ❌ TIMEOUT on page={page}, retry={retry}/{API_MAX_RETRIES} (timeout={API_TIMEOUT}s): {e}")
-                logger.error(f"  ⚠️ Partial data collected so far: {len(rows)} records")
+                last_error = f"TIMEOUT (timeout={API_TIMEOUT}s): {e}"
+                logger.error(f"  ❌ {last_error}")
+                logger.warning(f"  ⚠️ Partial data so far: {len(rows)} records")
                 retry += 1
 
             except requests.exceptions.ConnectionError as e:
-                logger.error(f"  ❌ CONNECTION ERROR on page={page}, retry={retry}/{API_MAX_RETRIES}: {e}")
+                last_error = f"CONNECTION ERROR: {e}"
+                logger.error(f"  ❌ {last_error}")
                 retry += 1
 
             except requests.exceptions.HTTPError as e:
-                logger.error(f"  ❌ HTTP ERROR on page={page}: status={resp.status_code}, detail={e}")
-                logger.error("  ⛔ HTTP error — ไม่ retry")
-                logger.info(f"📊 Total invoices loaded (partial): {len(rows)}")
-                return rows  # HTTP error ไม่ retry ออกเลย
-
-            except Exception as e:
-                logger.error(f"  ❌ Unexpected error on page={page}, retry={retry}/{API_MAX_RETRIES}: {type(e).__name__}: {e}")
+                status_code = getattr(resp, 'status_code', 'unknown')
+                last_error = f"HTTP ERROR {status_code}: {e}"
+                logger.error(f"  ❌ {last_error}")
                 retry += 1
 
+            except Exception as e:
+                last_error = f"UNEXPECTED ERROR ({type(e).__name__}): {e}"
+                logger.error(f"  ❌ {last_error}")
+                retry += 1
+
+        # ✅ ถ้า page นี้ล้มเหลวหลัง retry หมด → RAISE EXCEPTION
         if not success:
-            logger.error(f"  ⛔ page={page} failed after {API_MAX_RETRIES} retries — หยุดดึงข้อมูล")
-            break
+            error_msg = (
+                f"⛔ CRITICAL: Page {page} failed after {API_MAX_RETRIES} retries.\n"
+                f"   Last error: {last_error}\n"
+                f"   Partial data collected: {len(rows)} records\n"
+                f"   ❌ Job FAILED - ไม่รับประกันความครบถ้วนของข้อมูล"
+            )
+            logger.error(error_msg)
+            # � Raise exception เพื่อให้ Airflow retry ทั้ง job
+            raise Exception(f"Failed to fetch page {page} after {API_MAX_RETRIES} retries: {last_error}")
 
         page += 1
     
@@ -527,11 +550,11 @@ def run_invoice_cache_refresh(months: int = 6) -> InvoiceJobResult:
         end_date = calculation_date
         start_date = calculation_date - relativedelta(months=months)
         
-        # ดึงข้อมูล invoice
+        # ดึงข้อมูล invoice (จะ raise exception ถ้าล้มเหลว)
         invoices_data = load_all_invoices_from_d365(start_date, end_date)
         
         if not invoices_data:
-            logger.warning("⚠️ No invoices loaded from API")
+            logger.warning("⚠️ No invoices loaded from API (date range may be empty)")
             result.end_time = datetime.now()
             return result
         
@@ -569,20 +592,35 @@ def run_invoice_cache_refresh(months: int = 6) -> InvoiceJobResult:
         
         conn.close()
         
+        # ✅ ตรวจสอบว่าบันทึกข้อมูลครบหรือไม่
+        if result.invoices_processed > 0:
+            success_rate = (result.invoices_inserted / result.invoices_processed) * 100
+            logger.info(f"📊 Success rate: {success_rate:.2f}% ({result.invoices_inserted}/{result.invoices_processed})")
+        
     except Exception as e:
-        logger.error(f"❌ Critical error: {e}")
-        result.errors.append(f"Critical: {str(e)}")
+        error_msg = f"❌ CRITICAL ERROR: {type(e).__name__}: {str(e)}"
+        logger.error(error_msg)
+        result.errors.append(error_msg)
+        result.end_time = datetime.now()
+        
+        # 🚨 Re-raise exception เพื่อให้ Airflow รู้ว่า job ล้มเหลว
+        raise
     
     result.end_time = datetime.now()
     
     logger.info("=" * 80)
-    logger.info("✅ Invoice Cache Refresh Job Completed")
+    if result.errors:
+        logger.error("❌ Invoice Cache Refresh Job FAILED")
+    else:
+        logger.info("✅ Invoice Cache Refresh Job Completed Successfully")
     logger.info(f"   Duration: {result.duration_seconds:.2f} seconds")
     logger.info(f"   Invoices Processed: {result.invoices_processed}")
     logger.info(f"   Invoices Inserted: {result.invoices_inserted}")
     logger.info(f"   Invoices Failed: {result.invoices_failed}")
     if result.errors:
-        logger.info(f"   Errors: {len(result.errors)}")
+        logger.error(f"   ⚠️ Errors: {len(result.errors)}")
+        for err in result.errors[:3]:  # แสดง 3 errors แรก
+            logger.error(f"      - {err}")
     logger.info("=" * 80)
     
     return result
@@ -596,29 +634,55 @@ if __name__ == "__main__":
     """Run the job when executed as a script"""
     import argparse
     
-    parser = argparse.ArgumentParser(description='Invoice Cache Refresh Job')
+    parser = argparse.ArgumentParser(description='Invoice Cache Refresh Job (Aggressive Retry Mode)')
     parser.add_argument('--months', type=int, default=6, help='Number of months to fetch (default: 6)')
     args = parser.parse_args()
     
-    print(f"Starting Invoice Cache Refresh Job (months={args.months})...")
-    result = run_invoice_cache_refresh(months=args.months)
-    
-    # Print summary
-    print("\n" + "=" * 80)
-    print("JOB SUMMARY")
     print("=" * 80)
-    print(f"Duration: {result.duration_seconds:.2f} seconds")
-    print(f"Invoices Processed: {result.invoices_processed}")
-    print(f"Invoices Inserted: {result.invoices_inserted}")
-    print(f"Invoices Failed: {result.invoices_failed}")
+    print("🚀 Invoice Cache Refresh Job - AGGRESSIVE RETRY MODE")
+    print("=" * 80)
+    print(f"⚙️  Config:")
+    print(f"   - Months: {args.months}")
+    print(f"   - Max Retries: {API_MAX_RETRIES}")
+    print(f"   - Retry Delay: {API_RETRY_DELAY}s (with exponential backoff)")
+    print(f"   - Timeout: {API_TIMEOUT}s")
+    print(f"   - Batch Size: {BATCH_SIZE}")
+    print("=" * 80)
+    print(f"⚠️  Note: Job will FAIL and raise exception if any page cannot be fetched")
+    print(f"   after {API_MAX_RETRIES} retries to ensure data completeness.")
+    print("=" * 80)
+    print()
     
-    if result.errors:
-        print(f"\nErrors ({len(result.errors)}):")
-        for error in result.errors[:10]:  # Show first 10 errors
-            print(f"  - {error}")
-        if len(result.errors) > 10:
-            print(f"  ... and {len(result.errors) - 10} more errors")
+    try:
+        result = run_invoice_cache_refresh(months=args.months)
+        
+        # Print summary
+        print("\n" + "=" * 80)
+        print("INVOICE CACHE RESULT:")
+        print("=" * 80)
+        print(f"Duration: {result.duration_seconds:.2f} seconds")
+        print(f"Processed: {result.invoices_processed}")
+        print(f"Inserted: {result.invoices_inserted}")
+        print(f"Failed: {result.invoices_failed}")
+        
+        if result.errors:
+            print(f"\n⚠️ Errors ({len(result.errors)}):")
+            for error in result.errors[:10]:  # Show first 10 errors
+                print(f"  - {error}")
+            if len(result.errors) > 10:
+                print(f"  ... and {len(result.errors) - 10} more errors")
+            print("\n❌ Job completed with errors")
+            exit(1)
+        else:
+            print("\n✅ Invoice cache refresh completed successfully")
+            exit(0)
+            
+    except Exception as e:
+        print("\n" + "=" * 80)
+        print("❌ JOB FAILED")
+        print("=" * 80)
+        print(f"Error: {type(e).__name__}")
+        print(f"Detail: {str(e)}")
+        print("=" * 80)
+        print("\n💡 Tip: Airflow will automatically retry this job based on DAG configuration")
         exit(1)
-    else:
-        print("\n✅ Job completed successfully!")
-        exit(0)
