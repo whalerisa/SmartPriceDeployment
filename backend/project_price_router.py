@@ -51,6 +51,24 @@ def get_branch_code_from_db(numeric_code: str) -> str:
     """
     return get_branch_code_from_numeric(numeric_code)
 
+def auto_expire_projects(cursor) -> int:
+    """
+    เปลี่ยนสถานะโครงการที่เลยวันสิ้นสุดให้เป็น 'expired' อัตโนมัติ
+
+    เงื่อนไข: status = 'active' และ price_end_date < วันนี้ (วันสิ้นสุดถือว่ายังใช้ได้)
+    คืนค่าจำนวนแถวที่ถูกอัปเดต
+    """
+    cursor.execute("""
+        UPDATE Project_Price_Header
+        SET status = 'expired', updated_at = GETDATE()
+        WHERE status = 'active'
+        AND price_end_date < CAST(GETDATE() AS DATE)
+    """)
+    updated = cursor.rowcount
+    if updated and updated > 0:
+        print(f"⏰ [AUTO EXPIRE] อัปเดตโครงการหมดอายุ {updated} รายการ")
+    return updated
+
 def get_current_user_from_token(authorization: str = Header(None)) -> dict:
     """Extract user info from JWT token"""
     if not authorization:
@@ -321,6 +339,10 @@ async def get_project_prices(status: Optional[str] = None, branch: Optional[str]
         conn = get_mssql_conn()
         cursor = conn.cursor()
         
+        # ⭐ อัปเดตโครงการที่หมดอายุให้เป็น 'expired' อัตโนมัติก่อนดึงข้อมูล
+        if auto_expire_projects(cursor) > 0:
+            conn.commit()
+        
         query = "SELECT * FROM Project_Price_Header WHERE 1=1"
         params = []
         
@@ -549,6 +571,22 @@ async def update_project_status(
     try:
         conn = get_mssql_conn()
         cursor = conn.cursor()
+        
+        # ⭐ ตรวจสอบสถานะปัจจุบัน: ถ้าหมดอายุแล้ว ห้ามเปลี่ยนกลับเป็น active/canceled
+        cursor.execute("""
+            SELECT status FROM Project_Price_Header WHERE project_id = ?
+        """, (project_id,))
+        row = cursor.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        current_status = row[0]
+        # ⭐ โครงการหมดอายุห้ามกลับเป็น active แต่ยังยกเลิก (canceled) เพื่อซ่อนออกจากหน้าจอได้
+        if current_status == 'expired' and status == 'active':
+            raise HTTPException(
+                status_code=400,
+                detail="โครงการหมดอายุแล้ว ไม่สามารถเปลี่ยนกลับเป็น active ได้"
+            )
         
         cursor.execute("""
             UPDATE Project_Price_Header 

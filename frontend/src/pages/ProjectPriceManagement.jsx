@@ -20,7 +20,8 @@ const UNIT_OPTIONS = [
   { value: 'แผ่น', label: 'แผ่น' },
   { value: 'ม้วน', label: 'ม้วน' },
   { value: 'กล่อง', label: 'กล่อง' },
-  { value: 'ถุง', label: 'ถุง' }
+  { value: 'ถุง', label: 'ถุง' },
+  { value: 'ลัง', label: 'ลัง' },
 ];
 
 const ProjectPriceManagement = () => {
@@ -59,6 +60,7 @@ const ProjectPriceManagement = () => {
   
   const [items, setItems] = useState([]);
   const [branches, setBranches] = useState([]);
+
   
   // File upload state
   const [selectedFile, setSelectedFile] = useState(null);
@@ -98,6 +100,18 @@ const ProjectPriceManagement = () => {
   const [globalQuantity, setGlobalQuantity] = useState('');
   const [globalUnit, setGlobalUnit] = useState('');
 
+  // ⭐ SKU search (เลือกสินค้าเป็นราย SKU) - อ้างอิงจากหน้า Promotion
+  const [selectionType, setSelectionType] = useState('sku'); // 'sku' | 'filter'
+  const [skuSearchTerm, setSkuSearchTerm] = useState('');
+  const [skuSearchResults, setSkuSearchResults] = useState([]);
+  const [skuSearchLoading, setSkuSearchLoading] = useState(false);
+  const [showSkuDropdown, setShowSkuDropdown] = useState(false);
+  // สินค้าที่เลือกจากการค้นหา (รอกรอกราคา/จำนวน ก่อนกดเพิ่ม)
+  const [selectedSku, setSelectedSku] = useState(null);
+  const [skuPrice, setSkuPrice] = useState('');
+  const [skuQuantity, setSkuQuantity] = useState('');
+  const [skuUnit, setSkuUnit] = useState('');
+
   useEffect(() => {
     if (employee?.id) {
       loadProjects();
@@ -116,6 +130,34 @@ const ProjectPriceManagement = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // ⭐ ค้นหาสินค้าตาม SKU/ชื่อ (debounce 300ms) - อ้างอิงจากหน้า Promotion
+  useEffect(() => {
+    if (!skuSearchTerm || skuSearchTerm.length < 3) {
+      setSkuSearchResults([]);
+      setShowSkuDropdown(false);
+      return;
+    }
+
+    const searchSKU = async () => {
+      try {
+        setSkuSearchLoading(true);
+        const res = await api.get('/api/items/search', {
+          params: { q: skuSearchTerm },
+        });
+        setSkuSearchResults(res.data || []);
+        setShowSkuDropdown(true);
+      } catch (e) {
+        console.error('Error searching SKU:', e);
+        setSkuSearchResults([]);
+      } finally {
+        setSkuSearchLoading(false);
+      }
+    };
+
+    const t = setTimeout(searchSKU, 300);
+    return () => clearTimeout(t);
+  }, [skuSearchTerm]);
 
   // Filter employees based on search term - ใช้ API search แทน
   useEffect(() => {
@@ -793,6 +835,37 @@ const ProjectPriceManagement = () => {
     setMatchedSkus(prev => prev.filter(item => item.sku !== skuToRemove));
   };
 
+  // ⭐ เพิ่มสินค้าจากการค้นหาราย SKU
+  const addItemFromSku = () => {
+    if (!selectedSku) {
+      alert('กรุณาเลือกสินค้าจากการค้นหา');
+      return;
+    }
+    if (!skuPrice || parseFloat(skuPrice) <= 0) {
+      alert('กรุณากรอกราคา');
+      return;
+    }
+
+    setItems(prev => [...prev, {
+      sku: selectedSku.sku,
+      product_name: selectedSku.name || '',
+      brand: '',
+      thickness: '',
+      unit: skuUnit || selectedSku.unit || '',
+      price: skuPrice,
+      quantity: skuQuantity || '',
+    }]);
+
+    // reset ช่องค้นหา/กรอกราคา
+    setSelectedSku(null);
+    setSkuSearchTerm('');
+    setSkuSearchResults([]);
+    setShowSkuDropdown(false);
+    setSkuPrice('');
+    setSkuQuantity('');
+    setSkuUnit('');
+  };
+
   const deleteProject = async (projectId) => {
     if (!confirm('ต้องการยกเลิกราคาโครงการนี้หรือไม่?')) return;
     
@@ -1256,8 +1329,8 @@ const ProjectPriceManagement = () => {
 
   // ⭐ Filter projects by customer search term และซ่อน canceled
   const filteredProjects = projects.filter(project => {
-    // ⭐ ซ่อนรายการที่เป็น canceled
-    if (project.status === 'canceled') return false;
+    // ⭐ ซ่อนรายการที่เป็น canceled และ expired ออกจากหน้าจอ
+    if (project.status === 'canceled' || project.status === 'expired') return false;
     
     if (!customerSearchTerm.trim()) return true;
     
@@ -1749,9 +1822,48 @@ const ProjectPriceManagement = () => {
 
             {/* Items Section */}
             <div className="border-t pt-4">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-lg font-semibold">รายการสินค้า</h3>
-                <div className="flex gap-2">
+              <h3 className="text-lg font-semibold mb-3">รายการสินค้า</h3>
+
+              {/* ⭐ เลือกรูปแบบการเพิ่มสินค้า */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                <label
+                  className={`border rounded-xl p-4 cursor-pointer transition-colors ${
+                    selectionType === 'sku' ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="selection_type"
+                    value="sku"
+                    checked={selectionType === 'sku'}
+                    onChange={() => setSelectionType('sku')}
+                    className="hidden"
+                  />
+                  <div className="font-semibold">เลือกเป็นราย SKU</div>
+                  <div className="text-sm text-gray-500 mt-1">ค้นหาและเลือกสินค้าทีละรายการ</div>
+                </label>
+
+                <label
+                  className={`border rounded-xl p-4 cursor-pointer transition-colors ${
+                    selectionType === 'filter' ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="selection_type"
+                    value="filter"
+                    checked={selectionType === 'filter'}
+                    onChange={() => setSelectionType('filter')}
+                    className="hidden"
+                  />
+                  <div className="font-semibold">เลือกตาม Filter</div>
+                  <div className="text-sm text-gray-500 mt-1">Category / Brand / Group / SubGroup / Color / Thickness</div>
+                </label>
+              </div>
+
+              {/* ⭐ โหมดเลือกตาม Filter */}
+              {selectionType === 'filter' && (
+                <div className="flex justify-end mb-4">
                   <button
                     type="button"
                     onClick={() => setShowFilterModal(true)}
@@ -1761,7 +1873,100 @@ const ProjectPriceManagement = () => {
                     เลือกตาม Filter
                   </button>
                 </div>
+              )}
+
+              {/* ⭐ โหมดเลือกเป็นราย SKU (ค้นหา) */}
+              {selectionType === 'sku' && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
+                <h4 className="text-sm font-semibold mb-2">เลือกเป็นราย SKU</h4>
+                <div className="relative mb-3">
+                  <input
+                    type="text"
+                    placeholder="ค้นหา SKU หรือชื่อสินค้า (พิมพ์อย่างน้อย 3 ตัวอักษร)"
+                    value={selectedSku ? `${selectedSku.sku} - ${selectedSku.name || ''}` : skuSearchTerm}
+                    onChange={(e) => {
+                      setSelectedSku(null);
+                      setSkuSearchTerm(e.target.value);
+                    }}
+                    onFocus={() => { if (skuSearchResults.length > 0) setShowSkuDropdown(true); }}
+                    className="w-full border rounded-lg px-3 py-2"
+                  />
+                  {/* Dropdown ผลการค้นหา */}
+                  {showSkuDropdown && !selectedSku && skuSearchTerm.length >= 3 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-20 max-h-64 overflow-y-auto">
+                      {skuSearchLoading && (
+                        <div className="p-3 text-center text-gray-500">กำลังค้นหา...</div>
+                      )}
+                      {!skuSearchLoading && skuSearchResults.length === 0 && (
+                        <div className="p-3 text-center text-gray-500">ไม่พบสินค้า</div>
+                      )}
+                      {!skuSearchLoading && skuSearchResults.map((item) => (
+                        <div
+                          key={item.sku}
+                          onClick={() => {
+                            setSelectedSku(item);
+                            setSkuUnit(item.unit || '');
+                            setShowSkuDropdown(false);
+                          }}
+                          className="p-3 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                        >
+                          <p className="font-medium text-sm">{item.sku}</p>
+                          <p className="text-xs text-gray-600">{item.name}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* กรอกราคา/หน่วย/จำนวน แล้วกดเพิ่ม */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">ราคา *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={skuPrice}
+                      onChange={(e) => setSkuPrice(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">หน่วย</label>
+                    <select
+                      value={skuUnit}
+                      onChange={(e) => setSkuUnit(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    >
+                      <option value="">-- เลือกหน่วย --</option>
+                      {UNIT_OPTIONS.map((unit) => (
+                        <option key={unit.value} value={unit.value}>{unit.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">จำนวน</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0"
+                      value={skuQuantity}
+                      onChange={(e) => setSkuQuantity(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addItemFromSku}
+                    disabled={!selectedSku || !skuPrice || parseFloat(skuPrice) <= 0}
+                    className="flex items-center justify-center gap-1 bg-green-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                    เพิ่มสินค้า
+                  </button>
+                </div>
               </div>
+              )}
 
               {/* แสดงรายการที่เพิ่มแล้ว */}
               {items.length > 0 && (
@@ -1774,6 +1979,9 @@ const ProjectPriceManagement = () => {
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
                               <p className="text-sm font-medium">{item.product_name}</p>
+                              {item.sku && (
+                                <p className="text-xs text-gray-500">SKU: {item.sku}</p>
+                              )}
                               <p className="text-xs text-gray-600 mt-1">
                                 ราคา: ฿{parseFloat(item.price || 0).toLocaleString('th-TH', {minimumFractionDigits: 2})} | 
                                 จำนวน: {item.quantity} {item.unit}
@@ -2101,9 +2309,11 @@ const ProjectPriceManagement = () => {
                     <select
                       value={project.status}
                       onChange={(e) => updateStatus(project.project_id, e.target.value)}
+                      disabled={project.status === 'expired'}
+                      title={project.status === 'expired' ? 'โครงการหมดอายุแล้ว ไม่สามารถเปลี่ยนสถานะได้' : ''}
                       className={`px-2 py-1 rounded text-sm font-medium ${
                         project.status === 'active' ? 'bg-white text-green-800' :
-                        project.status === 'expired' ? 'bg-gray-100 text-gray-800' :
+                        project.status === 'expired' ? 'bg-gray-100 text-gray-800 cursor-not-allowed' :
                         project.status === 'canceled' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}
