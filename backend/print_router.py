@@ -110,8 +110,16 @@ def print_quotation(payload: dict):
                 data = {}
         
         # ดึงข้อมูลสาขาจาก response
-        if data and data.get("success") and data.get("data") and len(data.get("data", [])) > 0:
-            branch_info = data["data"][0]  # เอาตัวแรก
+        # หมายเหตุ: API gateway D365 (silver_location_) ไม่ได้คืน field "success"
+        # มันคืนมาเป็น {"data": [...]}, {"value": [...]} หรือ list ตรง ๆ
+        branch_list = None
+        if isinstance(data, list):
+            branch_list = data
+        elif isinstance(data, dict):
+            branch_list = data.get("data") or data.get("value") or []
+
+        if branch_list and len(branch_list) > 0:
+            branch_info = branch_list[0]  # เอาตัวแรก
             
             print(f"📋 Branch info: {branch_info}")
             

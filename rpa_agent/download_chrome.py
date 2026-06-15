@@ -1,10 +1,12 @@
 import os
 import sys
 import json
+import time
 import urllib.request
 import zipfile
 import shutil
 import ssl
+import subprocess
 
 # Bypass SSL verification if needed for corporate networks
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -26,6 +28,40 @@ def extract_zip(zip_path, extract_to):
     print(f"Extracting {zip_path}...")
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(extract_to)
+
+def kill_chrome_processes():
+    """Kill any leftover Chrome for Testing / chromedriver processes that may
+    lock files in the browser directory (common cause of WinError 5)."""
+    if os.name != "nt":
+        return
+    for proc in ("chrome.exe", "chromedriver.exe"):
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/IM", proc, "/T"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+def move_with_retry(src, dst, retries=10, delay=1.0):
+    """Move src -> dst, retrying on PermissionError.
+
+    On Windows the freshly extracted files are often briefly locked by
+    antivirus / Defender, which makes the first rename fail with WinError 5.
+    Retrying after a short delay almost always succeeds."""
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            if os.path.exists(dst):
+                shutil.rmtree(dst) if os.path.isdir(dst) else os.remove(dst)
+            shutil.move(src, dst)
+            return
+        except PermissionError as e:
+            last_err = e
+            print(f"   [retry {attempt}/{retries}] locked, waiting {delay}s... ({e})")
+            time.sleep(delay)
+    raise last_err
 
 def main():
     print("Fetching latest stable Chrome for Testing versions...")
@@ -59,10 +95,13 @@ def main():
     print(f"Found Chrome URL: {chrome_url}")
     print(f"Found ChromeDriver URL: {chromedriver_url}")
 
+    # Kill any leftover Chrome/ChromeDriver processes that could lock files
+    kill_chrome_processes()
+
     # Create clean browser directory
     if os.path.exists(BROWSER_DIR):
         print("Cleaning up existing browser directory...")
-        shutil.rmtree(BROWSER_DIR)
+        shutil.rmtree(BROWSER_DIR, ignore_errors=True)
     os.makedirs(BROWSER_DIR)
 
     # Download and extract Chrome
@@ -81,16 +120,16 @@ def main():
     chrome_extracted_dir = os.path.join(BROWSER_DIR, f"chrome-{PLATFORM}")
     chromedriver_extracted_dir = os.path.join(BROWSER_DIR, f"chromedriver-{PLATFORM}")
 
-    # Rename chrome-win32 to chrome
+    # Rename chrome-win32 to chrome (with retry to survive AV/file locks)
     final_chrome_dir = os.path.join(BROWSER_DIR, "chrome")
-    os.rename(chrome_extracted_dir, final_chrome_dir)
+    move_with_retry(chrome_extracted_dir, final_chrome_dir)
 
     # Move chromedriver.exe out of chromedriver-win32 to browser/chromedriver.exe
     chromedriver_exe = os.path.join(chromedriver_extracted_dir, "chromedriver.exe")
-    shutil.move(chromedriver_exe, os.path.join(BROWSER_DIR, "chromedriver.exe"))
+    move_with_retry(chromedriver_exe, os.path.join(BROWSER_DIR, "chromedriver.exe"))
 
     # Clean up empty chromedriver folder
-    shutil.rmtree(chromedriver_extracted_dir)
+    shutil.rmtree(chromedriver_extracted_dir, ignore_errors=True)
 
     print(f"\nSUCCESS: Chrome for Testing and ChromeDriver ({version}) downloaded successfully to:")
     print(BROWSER_DIR)

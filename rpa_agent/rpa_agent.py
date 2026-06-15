@@ -112,13 +112,24 @@ def execute_create_sales_quote(quote_code, rpa_data=None):
             
             print(f"📄 Checking tab: {current_title[:50]}...")
             
-            if 'businesscentral' in current_url.lower() and 'sales' in current_url.lower():
+            url_lower = current_url.lower()
+            title_lower = current_title.lower()
+            
+            # ทาง URL: รองรับทั้ง BC online (businesscentral) และ on-premise (BCTNG / page=41)
+            url_match = (
+                ('businesscentral' in url_lower and 'sales' in url_lower)
+                or 'bctng' in url_lower
+                or 'page=41' in url_lower
+            )
+            # ทาง Title: รองรับทั้งเอกพจน์/พหูพจน์ และภาษาไทย
+            title_match = (
+                'sales quote' in title_lower
+                or 'ใบเสนอราคาขาย' in current_title
+            )
+            
+            if url_match or title_match:
                 target_window = window
-                print(f"[OK] Found Sales Quotes tab: {current_title}")
-                break
-            elif 'Sales Quotes' in current_title or 'ใบเสนอราคาขาย' in current_title:
-                target_window = window
-                print(f"[OK] Found Sales Quotes tab: {current_title}")
+                print(f"[OK] Found Sales Quote tab: {current_title}")
                 break
         
         if not target_window:
@@ -129,159 +140,6 @@ def execute_create_sales_quote(quote_code, rpa_data=None):
         driver.switch_to.window(target_window)
         print(f"[LOCATION] Current page: {driver.current_url}")
         time.sleep(1)
-        
-        # STEP 1: Click +New button
-        print("\n" + "="*60)
-        print("STEP 1: Clicking +New button")
-        print("="*60)
-        
-        js_click_new = """
-        function ClickNewButton() {
-            var button = document.querySelector('button[aria-label="New"]');
-            if (button) {
-                button.click();
-                return 'Clicked New button in main document';
-            }
-            
-            var iframes = document.querySelectorAll('iframe');
-            for (var i = 0; i < iframes.length; i++) {
-                try {
-                    var iframeDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                    button = iframeDoc.querySelector('button[aria-label="New"]');
-                    if (button) {
-                        button.click();
-                        return 'Clicked New button in iframe ' + i;
-                    }
-                } catch (e) {}
-            }
-            throw new Error('New button not found');
-        }
-        return ClickNewButton();
-        """
-        
-        try:
-            result = driver.execute_script(js_click_new)
-            print(f"[OK] {result}")
-        except Exception as e:
-            print(f"[ERROR] Failed to click New button: {str(e)}")
-            return
-        
-        time.sleep(2)
-        
-        # STEP 2: Click Review button
-        print("\n" + "="*60)
-        print("STEP 2: Clicking 'Review or update the value for No.' button")
-        print("="*60)
-        
-        js_click_review = """
-        function ClickReviewButton() {
-            var button = document.querySelector('a[aria-label="Review or update the value for No."]');
-            if (button) {
-                button.click();
-                return 'Clicked Review button in main document';
-            }
-            
-            button = document.querySelector('a.ms-nav-assisteditbutton-embedded');
-            if (button) {
-                button.click();
-                return 'Clicked Review button (by class) in main document';
-            }
-            
-            var iframes = document.querySelectorAll('iframe');
-            for (var i = 0; i < iframes.length; i++) {
-                try {
-                    var iframeDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                    button = iframeDoc.querySelector('a[aria-label="Review or update the value for No."]');
-                    if (button) {
-                        button.click();
-                        return 'Clicked Review button in iframe ' + i;
-                    }
-                    button = iframeDoc.querySelector('a.ms-nav-assisteditbutton-embedded');
-                    if (button) {
-                        button.click();
-                        return 'Clicked Review button (by class) in iframe ' + i;
-                    }
-                } catch (e) {}
-            }
-            throw new Error('Review button not found');
-        }
-        return ClickReviewButton();
-        """
-        
-        try:
-            result = driver.execute_script(js_click_review)
-            print(f"[OK] {result}")
-        except Exception as e:
-            print(f"[ERROR] Failed to click Review button: {str(e)}")
-            return
-        
-        time.sleep(2)
-        
-        # STEP 3: Find and click the matching series
-        print("\n" + "="*60)
-        print(f"STEP 3: Finding and clicking series '{target_series}'")
-        print("="*60)
-        
-        js_click_series = f"""
-        function ClickSeries() {{
-            var targetText = '{target_series}';
-            
-            // ลองหาใน main document
-            var links = document.querySelectorAll('a.stringcontrol-read');
-            for (var i = 0; i < links.length; i++) {{
-                if (links[i].textContent.trim() === targetText) {{
-                    links[i].click();
-                    return 'Clicked series "' + targetText + '" in main document';
-                }}
-            }}
-            
-            // ลองหาทุก link ที่มี text ตรงกัน
-            links = document.querySelectorAll('a');
-            for (var i = 0; i < links.length; i++) {{
-                if (links[i].textContent.trim() === targetText) {{
-                    links[i].click();
-                    return 'Clicked series "' + targetText + '" (generic link) in main document';
-                }}
-            }}
-            
-            // ลองหาใน iframe
-            var iframes = document.querySelectorAll('iframe');
-            for (var j = 0; j < iframes.length; j++) {{
-                try {{
-                    var iframeDoc = iframes[j].contentDocument || iframes[j].contentWindow.document;
-                    
-                    links = iframeDoc.querySelectorAll('a.stringcontrol-read');
-                    for (var i = 0; i < links.length; i++) {{
-                        if (links[i].textContent.trim() === targetText) {{
-                            links[i].click();
-                            return 'Clicked series "' + targetText + '" in iframe ' + j;
-                        }}
-                    }}
-                    
-                    links = iframeDoc.querySelectorAll('a');
-                    for (var i = 0; i < links.length; i++) {{
-                        if (links[i].textContent.trim() === targetText) {{
-                            links[i].click();
-                            return 'Clicked series "' + targetText + '" (generic link) in iframe ' + j;
-                        }}
-                    }}
-                }} catch (e) {{}}
-            }}
-            
-            throw new Error('Series "' + targetText + '" not found');
-        }}
-        return ClickSeries();
-        """
-        
-        try:
-            result = driver.execute_script(js_click_series)
-            print(f"[OK] {result}")
-        except Exception as e:
-            print(f"[ERROR] Failed to click series: {str(e)}")
-            print(f"[TIP] Make sure the series '{target_series}' exists in the list")
-            return
-        
-        time.sleep(2)
         
         # Get data from JSON or use defaults
         customer_no = rpa_data.get("customer_no", "00001AY") if rpa_data else "00001AY"
