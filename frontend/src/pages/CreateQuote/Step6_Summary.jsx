@@ -1517,6 +1517,90 @@ function Step6_Summary({ state, dispatch }) {
     }
   };
 
+  // ⏸️ [API VERSION - ปิดใช้งานชั่วคราว] ส่งเข้า D365 ผ่าน backend API โดยตรง
+  // เก็บไว้สำหรับสลับกลับมาใช้ภายหลัง (ตอนนี้ปุ่มยืนยันใช้ RPA แทน — ดู handleSendToBC ด้านล่าง)
+  const handleSendToBCViaAPI = async () => {
+    try {
+      setSendingToBC(true);
+
+      const payload = buildQuotationPayload("complete");
+
+      // ⭐ เตรียมรายการสินค้าสำหรับ D365 Sales Quote
+      // หมายเหตุ: payload.cart[].price เป็นราคาต่อหน่วยที่คำนวณแล้ว
+      // (กรณีกระจก price = ราคาต่อแผ่น)
+      const d365Items = payload.cart.map((it) => {
+        const isGlass = (it.category || "").toUpperCase() === "G";
+        const sqft = Number(it.sqft_sheet || 0);
+        const unitPrice = Number(it.price || 0);
+
+        return {
+          sku: it.sku,
+          description: it.name || "",
+          quantity: Number(it.qty || 0),
+          unit_price: unitPrice,
+          // เก็บข้อมูลกระจกไว้เป็น reference (ไม่บังคับ)
+          price_per_sheet: isGlass ? unitPrice : null,
+          price_per_sqft: isGlass && sqft > 0 ? Number((unitPrice / sqft).toFixed(2)) : null,
+          variant_code: it.variantCode || "",
+        };
+      });
+
+      // ⭐ เพิ่มค่าขนส่งเป็นรายการสุดท้าย (ถ้ามี)
+      const shippingCost = Number(state.shippingCustomerPay || 0);
+      if (shippingCost > 0) {
+        d365Items.push({
+          sku: "OT01-014",
+          description: "ค่าขนส่ง",
+          quantity: 1,
+          unit_price: shippingCost,
+        });
+      }
+
+      // ดึง project_code จาก pricing response (ถ้ามี)
+      const projectCodeFromPricing =
+        payload.cart?.find((it) => it.project_code)?.project_code || "";
+      const projectCode =
+        projectCodeFromPricing ||
+        (selectedProject
+          ? customerProjects.find((p) => p.project_id === selectedProject)?.project_code
+          : "") ||
+        payload.project_code ||
+        null;
+
+      const d365Payload = {
+        quote_code: payload.quoteNo || "",
+        customer_no: payload.customer?.code || "",
+        sales_admin: payload.employee?.id ? String(payload.employee.id) : "",
+        project_code: projectCode,
+        items: d365Items,
+      };
+
+      // ⭐ ยิงเข้า D365 Business Central ผ่าน backend (สร้าง header -> เพิ่ม lines)
+      const res = await api.post("/api/d365/sales-quote", d365Payload);
+
+      const quoteNumber = res.data?.quote_number || res.data?.quote_id || "";
+      alert(
+        `ส่งใบเสนอราคาเข้า Dynamics 365 เรียบร้อยแล้ว${
+          quoteNumber ? `\nเลขที่ D365: ${quoteNumber}` : ""
+        }`
+      );
+
+      // ✅ RESET ตรงนี้แทน
+      dispatch({ type: "RESET_QUOTE" });
+      navigate("/confirmed-quotes");
+    } catch (err) {
+      console.error(err);
+      const errorMsg =
+        err.response?.data?.detail ||
+        err.message ||
+        "ส่งข้อมูลเข้า Dynamics 365 ไม่สำเร็จ";
+      alert(errorMsg);
+    } finally {
+      setSendingToBC(false);
+    }
+  };
+
+  // ✅ [RPA VERSION - ใช้งานอยู่] ส่งเข้า D365 ผ่าน Local RPA Agent
   const handleSendToBC = async () => {
     try {
       setSendingToBC(true);
@@ -1567,23 +1651,10 @@ function Step6_Summary({ state, dispatch }) {
       const projectCodeFromPricing =
         payload.cart?.find((it) => it.project_code)?.project_code || "";
 
-      console.log("🔍 [RPA DEBUG] Checking project_code:");
-      console.log("  - selectedProject:", selectedProject);
-      console.log("  - projectCodeFromPricing:", projectCodeFromPricing);
-      console.log(
-        "  - payload.cart items with project_code:",
-        payload.cart
-          ?.filter((it) => it.project_code)
-          .map((it) => ({
-            sku: it.sku,
-            project_code: it.project_code,
-          }))
-      );
-
       const rpaPayload = {
-        quote_code: payload.quoteNo?.substring(0, 4) , // เอา 4 ตัวแรกของเลขที่ใบเสนอราคา
+        quote_code: payload.quoteNo?.substring(0, 4), // เอา 4 ตัวแรกของเลขที่ใบเสนอราคา
         customer_no: payload.customer.code,
-        sales_admin: payload.employee?.id , // ใช้ employee ID หรือค่า default
+        sales_admin: payload.employee?.id, // ใช้ employee ID หรือค่า default
         your_reference: payload.quoteNo || "", // ใส่เลขที่ใบเสนอราคาในระบบเรา
         project_code:
           projectCodeFromPricing ||

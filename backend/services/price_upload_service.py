@@ -27,6 +27,56 @@ import pyodbc  # ⭐ For exception handling in fast_executemany fallback
 logger = logging.getLogger(__name__)
 
 
+def _wvarchar(length: int):
+    """
+    Helper สำหรับ cursor.setinputsizes()
+
+    คืนค่า tuple ที่ตรึงชนิดคอลัมน์เป็น NVARCHAR ความยาวตามที่กำหนด
+    เพื่อแก้บั๊ก pyodbc fast_executemany ที่โยน error:
+        HY090 - Invalid string or buffer length (0) (SQLParamData)
+    ซึ่งเกิดเมื่อค่าคอลัมน์ข้อความทั้ง batch เป็น None/ค่าว่าง
+    ทำให้ pyodbc คำนวณขนาด buffer ไม่ได้ (ได้ 0)
+    """
+    return (pyodbc.SQL_WVARCHAR, length, 0)
+
+
+# ── Input-size templates สำหรับ fast_executemany (ตรึงคอลัมน์ข้อความ) ──
+# None = ปล่อยให้ pyodbc เดาเอง (เหมาะกับคอลัมน์ตัวเลข/decimal)
+
+# UPDATE Item_Price: (SDM, R2, R1, W2, W1, PackageSize, AlternateName, SKU, BranchCode)
+_UPDATE_PRICE_INPUT_SIZES = [
+    None, None, None, None, None,  # SDM, R2, R1, W2, W1
+    None,                          # PackageSize
+    _wvarchar(1000),               # AlternateName
+    _wvarchar(100),                # SKU
+    _wvarchar(100),                # BranchCode
+]
+
+# INSERT Item_Price: (SKU, BranchCode, SDM, R2, R1, W2, W1, PackageSize, AlternateName)
+_INSERT_PRICE_INPUT_SIZES = [
+    _wvarchar(100),                # SKU
+    _wvarchar(100),                # BranchCode
+    None, None, None, None, None,  # SDM, R2, R1, W2, W1
+    None,                          # PackageSize
+    _wvarchar(1000),               # AlternateName
+]
+
+# INSERT detail log: (id, version_id, sku, new_no2, new_R1, new_R2, new_W1, new_W2,
+#                     old_R1, old_R2, old_W1, old_W2, new_alternate_name,
+#                     old_alternate_name, change_price_flag, change_altname_flag, BranchCode)
+_INSERT_DETAIL_INPUT_SIZES = [
+    None, None,                    # id, version_id
+    _wvarchar(100),                # sku
+    _wvarchar(1000),               # new_no2
+    None, None, None, None,        # new_R1, new_R2, new_W1, new_W2
+    None, None, None, None,        # old_R1, old_R2, old_W1, old_W2
+    _wvarchar(1000),               # new_alternate_name
+    _wvarchar(1000),               # old_alternate_name
+    None, None,                    # change_price_flag, change_altname_flag
+    _wvarchar(100),                # BranchCode
+]
+
+
 # ⭐ Filename key pattern: 1 letter (G/A/Y/S/C/E) + 4 digits, e.g. "G0001"
 # ตัวอย่างชื่อไฟล์ที่รองรับ: Glass_690518_G0001.xlsx, G18052569_G0001.xlsx
 _KEY_PATTERN = re.compile(r'_([GAYSCE]\d{4})$', re.IGNORECASE)
@@ -333,6 +383,7 @@ class PriceUploadService:
             # ⭐ Bulk UPDATE existing prices
             if update_params:
                 logger.info(f"Bulk UPDATE: {len(update_params)} rows...")
+                cursor.setinputsizes(_UPDATE_PRICE_INPUT_SIZES)  # ⭐ แก้บั๊ก HY090
                 for i in range(0, len(update_params), self.BULK_BATCH_SIZE):
                     batch = update_params[i:i + self.BULK_BATCH_SIZE]
                     cursor.executemany(
@@ -351,6 +402,7 @@ class PriceUploadService:
             # ⭐ Bulk INSERT new prices
             if insert_params:
                 logger.info(f"Bulk INSERT: {len(insert_params)} rows...")
+                cursor.setinputsizes(_INSERT_PRICE_INPUT_SIZES)  # ⭐ แก้บั๊ก HY090
                 for i in range(0, len(insert_params), self.BULK_BATCH_SIZE):
                     batch = insert_params[i:i + self.BULK_BATCH_SIZE]
                     cursor.executemany(
@@ -381,6 +433,7 @@ class PriceUploadService:
                 
                 # ⭐ Try fast_executemany first, fallback to slow mode if decimal precision error
                 try:
+                    cursor.setinputsizes(_INSERT_DETAIL_INPUT_SIZES)  # ⭐ แก้บั๊ก HY090
                     for i in range(0, len(detail_params_with_id), self.BULK_BATCH_SIZE):
                         batch = detail_params_with_id[i:i + self.BULK_BATCH_SIZE]
                         cursor.executemany(
@@ -398,8 +451,10 @@ class PriceUploadService:
                             batch
                         )
                         logger.info(f"  Detail log batch {i // self.BULK_BATCH_SIZE + 1} done ({len(batch)} rows)")
-                except pyodbc.ProgrammingError as e:
-                    if "decimal" in str(e).lower() or "precision" in str(e).lower():
+                except pyodbc.Error as e:
+                    msg = str(e).lower()
+                    if ("decimal" in msg or "precision" in msg
+                            or "hy090" in msg or "buffer length" in msg):
                         logger.warning(f"fast_executemany failed for detail log: {e}")
                         logger.info("Falling back to slow mode (fast_executemany=False) for detail log...")
                         self.db_connection.rollback()  # Rollback failed attempts
@@ -641,6 +696,7 @@ class PriceUploadService:
 
             if update_params:
                 total_update_batches = (len(update_params) + self.BULK_BATCH_SIZE - 1) // self.BULK_BATCH_SIZE
+                cursor.setinputsizes(_UPDATE_PRICE_INPUT_SIZES)  # ⭐ แก้บั๊ก HY090
                 for i in range(0, len(update_params), self.BULK_BATCH_SIZE):
                     batch = update_params[i : i + self.BULK_BATCH_SIZE]
                     cursor.executemany(
@@ -667,6 +723,7 @@ class PriceUploadService:
             # ── Step 8: Bulk INSERT ───────────────────────────
             if insert_params:
                 total_insert_batches = (len(insert_params) + self.BULK_BATCH_SIZE - 1) // self.BULK_BATCH_SIZE
+                cursor.setinputsizes(_INSERT_PRICE_INPUT_SIZES)  # ⭐ แก้บั๊ก HY090
                 for i in range(0, len(insert_params), self.BULK_BATCH_SIZE):
                     batch = insert_params[i : i + self.BULK_BATCH_SIZE]
                     cursor.executemany(
@@ -699,6 +756,7 @@ class PriceUploadService:
                 
                 # ⭐ Try fast_executemany first, fallback to slow mode if decimal precision error
                 try:
+                    cursor.setinputsizes(_INSERT_DETAIL_INPUT_SIZES)  # ⭐ แก้บั๊ก HY090
                     for i in range(0, len(detail_with_id), self.BULK_BATCH_SIZE):
                         batch = detail_with_id[i : i + self.BULK_BATCH_SIZE]
                         cursor.executemany(
@@ -713,8 +771,10 @@ class PriceUploadService:
                             """,
                             batch,
                         )
-                except pyodbc.ProgrammingError as e:
-                    if "decimal" in str(e).lower() or "precision" in str(e).lower():
+                except pyodbc.Error as e:
+                    msg = str(e).lower()
+                    if ("decimal" in msg or "precision" in msg
+                            or "hy090" in msg or "buffer length" in msg):
                         logger.warning(f"fast_executemany failed for detail log: {e}")
                         logger.info("Falling back to slow mode (fast_executemany=False) for detail log...")
                         self.db_connection.rollback()  # Rollback failed attempts
