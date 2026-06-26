@@ -232,10 +232,9 @@ export default function SpecialPriceApproval() {
         )}
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start lg:h-[calc(100vh-12rem)]">
           {/* Requests List */}
-          <div className="lg:col-span-2">
-            {requests.length === 0 ? (
+          <div className="lg:col-span-2 lg:h-full lg:overflow-y-auto lg:pr-2">{requests.length === 0 ? (
               <div className="bg-white rounded-lg shadow p-8 text-center">
                 <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-600">ไม่มีรายการรอการอนุมัติ</p>
@@ -312,7 +311,7 @@ export default function SpecialPriceApproval() {
 
           {/* Details Panel */}
           {selectedRequest && (
-            <div className="bg-white rounded-lg shadow p-6">
+            <div className="bg-white rounded-lg shadow p-6 lg:self-start">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">รายละเอียด</h2>
 
               {/* Request Info */}

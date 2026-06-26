@@ -1660,8 +1660,8 @@ function Step6_Summary({ state, dispatch }) {
           projectCodeFromPricing ||
           (selectedProject
             ? customerProjects.find((p) => p.project_id === selectedProject)?.project_code
-            : ""), // ⭐ แก้เป็น project_id
-        // ไม่ต้องใช้ remote_chrome_address อีกต่อไปเพราะ Local Agent รันที่เครื่องเดียวกัน (127.0.0.1) เสมอ
+            : ""), 
+        
         remote_chrome_address: "127.0.0.1:9222",
         items: rpaItems,
       };
